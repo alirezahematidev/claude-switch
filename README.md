@@ -34,6 +34,22 @@ inside an integrated terminal.
   `/usr/local/bin`, npm/nvm/volta/bun prefixes). You can also choose the
   executable in **Settings → Claude Code**.
 
+## Install
+
+1. Download the `.dmg` from the
+   [latest release](https://github.com/alirezahematidev/claude-switch/releases/latest)
+   (`Claude Switch_<version>_universal.dmg`, one file for Apple silicon and
+   Intel).
+2. Open it and drag **Claude Switch** into **Applications**.
+3. Start Claude Switch from Applications or Spotlight.
+
+To update, download the new `.dmg` and replace the app. Accounts, sign-ins and
+projects are kept: they live outside the app, in `~/.claude-switch` and
+`~/Library/Application Support/ClaudeSwitch`.
+
+To build the app yourself instead, see [Development](#development)
+(`pnpm app:build` writes the `.dmg` to `src-tauri/target/release/bundle/dmg/`).
+
 ## Getting started
 
 1. Open Claude Switch. The first-run guide checks your setup and explains how

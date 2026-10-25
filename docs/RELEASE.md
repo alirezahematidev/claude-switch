@@ -67,6 +67,18 @@ xcrun stapler validate "$APP"
 
 Then run the [manual checklist](MANUAL_TESTING.md) on a clean Mac or user account.
 
+## Publish
+
+The README sends users to the latest GitHub release for the `.dmg`. Attach
+the signed, notarized universal build to a release tagged with the version:
+
+```bash
+VERSION=0.1.0
+gh release create "v$VERSION" \
+  "src-tauri/target/universal-apple-darwin/release/bundle/dmg/Claude Switch_${VERSION}_universal.dmg" \
+  --title "Claude Switch $VERSION" --notes "…"
+```
+
 ## Versioning
 
 Bump `version` in `package.json`, `src-tauri/Cargo.toml` and
