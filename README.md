@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/alirezahematidev/claude-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/alirezahematidev/claude-switch/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/alirezahematidev/claude-switch)](https://github.com/alirezahematidev/claude-switch/releases/latest)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/alirezahemmati.claude-switch-vscode?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=alirezahemmati.claude-switch-vscode)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A local-first macOS app, and a VS Code extension, for keeping several Claude
@@ -58,12 +59,21 @@ To build the app yourself instead, see [Development](#development)
 
 ### Only want VS Code?
 
-The extension works on its own. Download `claude-switch-vscode-<version>.vsix`
-from the [latest release](https://github.com/alirezahematidev/claude-switch/releases/latest)
-and install it with **Extensions → … → Install from VSIX…** (or
-`code --install-extension claude-switch-vscode-<version>.vsix`). Then open
-**Claude Switch** in the activity bar. Install the app later and it shows the
-same accounts. See [vscode-extension/README.md](vscode-extension/README.md).
+The extension works on its own and is published on the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=alirezahemmati.claude-switch-vscode).
+Search for **Claude Switch** in the Extensions view, or run:
+
+```bash
+code --install-extension alirezahemmati.claude-switch-vscode
+```
+
+For editors that don't use the Marketplace (such as Cursor or Windsurf), download
+`claude-switch-vscode-<version>.vsix` from the
+[latest release](https://github.com/alirezahematidev/claude-switch/releases/latest)
+and install it with **Extensions → … → Install from VSIX…**.
+
+Then open **Claude Switch** in the activity bar. Install the app later and it
+shows the same accounts. See [vscode-extension/README.md](vscode-extension/README.md).
 
 ## Getting started
 
@@ -175,7 +185,8 @@ What moves and what does not:
 
 Install the Claude Switch extension from **Settings → Editors → Install**
 (VS Code, VS Code Insiders, Cursor or Windsurf; it ships with the app), or on
-its own from the release's `.vsix` (see [Only want VS Code?](#only-want-vs-code)).
+its own from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=alirezahemmati.claude-switch-vscode)
+or the release's `.vsix` (see [Only want VS Code?](#only-want-vs-code)).
 Then:
 
 - Add and sign in your accounts in the **Claude Switch** view in the
