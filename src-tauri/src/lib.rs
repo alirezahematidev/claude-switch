@@ -3,33 +3,19 @@
 //! Layers (outer to inner):
 //! * `commands` – Tauri IPC handlers (thin adapters)
 //! * `desktop`  – menus, tray, lifecycle, shortcuts, notifications
-//! * `core`     – application services and invariants
-//! * `store`/`db` – SQLite persistence
-//! * `pty`, `cli`, `env`, `paths` – process, CLI, environment and filesystem
-//!   services
+//! * `claude_switch_core` (re-exported below) – application services,
+//!   persistence, processes, CLI, environment and filesystem
 
-pub mod cli;
-pub mod clock;
 pub mod commands;
-pub mod core;
-pub mod db;
 pub mod desktop;
-pub mod domain;
-pub mod editor_bridge;
-pub mod editor_settings;
-pub mod editors;
-pub mod env;
-pub mod error;
-pub mod live_sessions;
-pub mod logging;
-pub mod login;
-pub mod paths;
-pub mod pty;
-pub mod settings;
-pub mod shell_env;
-pub mod store;
-pub mod transcripts;
-pub mod usage_limit;
+
+// The core lives in its own crate (shared with the editor helper); its
+// modules stay reachable under this crate's paths.
+pub use claude_switch_core::{
+    cli, clock, core, db, domain, editor_bridge, editor_settings, editors, env, error,
+    live_sessions, logging, login, paths, pty, settings, shell_env, store, transcripts,
+    usage_limit,
+};
 
 use std::sync::Arc;
 
@@ -207,5 +193,27 @@ mod export_bindings {
         crate::editor_bridge::BridgeConversation::export_all(&cfg).unwrap();
         crate::editor_bridge::BridgeOpenConversation::export_all(&cfg).unwrap();
         crate::editor_bridge::BridgeHandOver::export_all(&cfg).unwrap();
+
+        // The VS Code extension drives the same core through its helper.
+        let ext = ts_rs::Config::from_env().with_out_dir(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../vscode-extension/src/bindings"),
+        );
+        crate::domain::Account::export_all(&ext).unwrap();
+        crate::domain::Project::export_all(&ext).unwrap();
+        crate::domain::SessionInfo::export_all(&ext).unwrap();
+        crate::domain::CreateAccountInput::export_all(&ext).unwrap();
+        crate::domain::UpdateAccountInput::export_all(&ext).unwrap();
+        crate::domain::DeleteAccountInput::export_all(&ext).unwrap();
+        crate::domain::StartLoginInput::export_all(&ext).unwrap();
+        crate::domain::StartSessionInput::export_all(&ext).unwrap();
+        crate::domain::OpenInEditorInput::export_all(&ext).unwrap();
+        crate::domain::OpenInEditorResult::export_all(&ext).unwrap();
+        crate::domain::ContinueConversationInput::export_all(&ext).unwrap();
+        crate::domain::ContinueConversationResult::export_all(&ext).unwrap();
+        crate::core::SystemInfo::export_all(&ext).unwrap();
+        crate::core::ChangeScope::export_all(&ext).unwrap();
+        crate::login::LoginProgress::export_all(&ext).unwrap();
+        crate::error::ErrorPayload::export_all(&ext).unwrap();
     }
 }

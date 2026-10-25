@@ -1,75 +1,62 @@
 # Claude Switch for VS Code
 
-Switch the account Claude Code uses in this editor, and pick up a conversation
-with another account when one runs into a usage limit.
+Switch Claude Code between your accounts in one click. Each account stays
+signed in, and the conversation you have open moves with you.
 
-Needs the Claude Switch app on this Mac, with your
-accounts added and signed in there. The extension starts it in the background
-when needed.
+## Get started
 
-## Use
+1. Open **Claude Switch** in the activity bar and **Add Account** (Work,
+   Personal, …).
+2. Sign in: Claude Code opens your browser. If the page shows a code, choose
+   **Enter Code** and paste it.
+3. Repeat for each account.
 
-- **Title bar:** the account button next to Claude Code's own button, in the
-  editor title bar and in the Claude Code sidebar.
-- **Status bar:** shows the account Claude Code uses here. Click it to switch.
-- **Command Palette:** *Claude Switch: Switch Claude Code Account*.
+## Switch
 
-Choose an account, then:
+Click the account in the **status bar** (or the button next to Claude Code's
+in the title bar, or an account in the Claude Switch view) and pick another.
 
-- **Continue this conversation** copies the latest conversation of this
-  workspace, with its full history, to that account, closes the Claude tabs in
-  this window that still use another account, and reopens the conversation in
-  a new tab with "Continue where you left off." in the message box. Press
-  Return to send it. When the conversation is open in the Claude sidebar,
-  which cannot be closed, the window reloads instead and the sidebar
-  continues it with that account.
-- **Continue another conversation…** does the same for an older one.
-- **New conversation** opens a new Claude tab with that account.
-- **Only switch**: Claude tabs you open from now on use that account.
+That's it. Claude Code uses the new account from then on, in every window.
+A conversation open in a Claude tab is copied to the new account and
+reopens there with its full history. When it is in Claude's sidebar, the
+window reloads to do the same.
 
-After **New conversation** or **Only switch**, Claude Switch offers to close
-the Claude tabs in this window that still use the previous account, or to
-reload the window when the Claude sidebar still uses it. The status bar turns
-yellow while such tabs, or such a sidebar, are open.
+If something still runs with the old account, the status bar turns yellow;
+click it to move it over.
 
-## What changes
+## Also
 
-The account is set through the Claude Code extension's own setting,
-`claudeCode.environmentVariables` (`CLAUDE_CONFIG_DIR`), which VS Code keeps
-in your user settings. So it applies to new Claude tabs in **every** window.
-Choose **Per window** to go back to each window using the account it was
-opened with.
+- **New Claude Terminal** (the terminal button on an account) runs Claude Code
+  with that account in a terminal. When it reports a usage limit, Claude
+  Switch offers to continue with another account.
+- **Continue a Conversation with Another Account…** picks up an older
+  conversation of this workspace.
+- **Use Each Window's Own Account** goes back to the account each window was
+  opened with.
 
-What keeps the previous account:
+## Good to know
 
-- **Claude tabs that are already open.** Each runs its own Claude Code
-  process, started with the account in use when the tab opened. Its replies,
-  and `/usage` typed there, use that account until the tab is closed.
-- **The Claude sidebar.** Its conversation runs the same way, even though
-  Claude Code then shows the new account's email there. It cannot be closed,
-  so Claude Switch copies its conversation to the new account and offers to
-  reload the window, which restarts it there with its full history.
-- **The usage meter.** Claude Code's extension shows one usage meter per
-  window, fed by every Claude tab in it, so it mixes accounts while old tabs
-  are open. Close them (Claude Switch offers to) and the meter follows the
-  new account.
-- **Claude Code's own account actions.** Its **Logout** command and plan
-  details use the account the window was opened with (Claude Code reads it
-  once per window). To have those use another account too, open the folder
-  from Claude Switch with that account.
-
-Conversations are copied by Claude Switch from one account's profile to the
-other's; the original stays as it is. Each account keeps its own settings,
-MCP servers and plugins.
+- Each account is a separate Claude Code profile
+  (`~/.claude-switch/profiles/<id>`, used as `CLAUDE_CONFIG_DIR`) with its own
+  login, settings and history. Sign-in is Claude Code's own; Claude Switch
+  never sees passwords or tokens.
+- A Claude subscription or a Console API key is isolated per account; other
+  sign-in methods may be shared by every profile
+  ([details](https://github.com/alirezahematidev/claude-switch#how-isolation-works-and-where-it-stops)).
+- Claude Code's own **Logout** command and plan details keep using the
+  account the window was opened with.
+- Works with or without the [Claude Switch app](https://github.com/alirezahematidev/claude-switch)
+  for macOS; both show the same accounts.
+- macOS, local windows only. Needs [Claude Code](https://code.claude.com) and
+  its VS Code extension.
 
 ## Settings
 
 | Setting | Default | |
 | --- | --- | --- |
-| `claudeSwitch.showInEditorTitle` | `true` | Button in the editor title bar |
 | `claudeSwitch.showStatusBar` | `true` | Account in the status bar |
-| `claudeSwitch.continueMessage` | `Continue where you left off.` | Message placed in the box when continuing |
-| `claudeSwitch.socketPath` | (empty) | Claude Switch's socket, for development builds |
+| `claudeSwitch.showInEditorTitle` | `true` | Button in the editor title bar |
+| `claudeSwitch.continueMessage` | `Continue where you left off.` | Placed in the message box when a conversation moves to another account |
 
-Local windows only: in remote windows (SSH, containers, WSL) Claude Code runs
-on the other machine.
+Claude Switch is not affiliated with or endorsed by Anthropic. Claude and
+Claude Code are trademarks of Anthropic.

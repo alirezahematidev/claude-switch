@@ -1,5 +1,8 @@
 **
 !out/**
+!bin/claude-switch-helper
+!media/**
 !package.json
 !README.md
+!LICENSE
 !icon.png

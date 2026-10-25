@@ -12,7 +12,7 @@
 // Signing and notarization use the APPLE_* variables from the environment
 // (see docs/RELEASE.md).
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -108,6 +108,10 @@ run("pnpm", [
   ...extraArgs,
 ]);
 
+// The extension on its own, for people who only use VS Code.
+const vsix = `src-tauri/target/universal-apple-darwin/release/bundle/claude-switch-vscode-${version}.vsix`;
+copyFileSync(join(root, "vscode-extension", "claude-switch-vscode.vsix"), join(root, vsix));
+
 console.log(
-  `\nBuilt Claude Switch ${version}:\n  src-tauri/target/universal-apple-darwin/release/bundle/dmg/Claude Switch_${version}_universal.dmg`,
+  `\nBuilt Claude Switch ${version}:\n  src-tauri/target/universal-apple-darwin/release/bundle/dmg/Claude Switch_${version}_universal.dmg\n  ${vsix}`,
 );

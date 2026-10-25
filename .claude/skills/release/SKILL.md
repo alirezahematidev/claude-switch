@@ -1,6 +1,6 @@
 ---
 name: release
-description: Builds a universal (Apple silicon + Intel) Claude Switch release for a new version and publishes it as a GitHub release with the DMG. Use only when the user runs /release with patch, minor, major or an explicit MAJOR.MINOR.PATCH version.
+description: Builds a universal (Apple silicon + Intel) Claude Switch release for a new version and publishes it as a GitHub release with the DMG and the VS Code extension. Use only when the user runs /release with patch, minor, major or an explicit MAJOR.MINOR.PATCH version.
 argument-hint: "<patch | minor | major | MAJOR.MINOR.PATCH>"
 disable-model-invocation: true
 allowed-tools: Bash(node scripts/release.mjs:*), Bash(rustup target add:*), Bash(pnpm app:release:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git fetch:*), Bash(git ls-remote:*), Bash(git describe:*), Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git push origin main), Bash(gh auth status), Bash(gh release:*), Bash(ls:*)
@@ -70,10 +70,11 @@ finishes. If it fails, put the version files back (the tree was clean before)
 with `git checkout -- package.json vscode-extension/package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock`
 and stop.
 
-Then confirm the DMG exists:
+Then confirm the DMG and the extension exist:
 
 ```bash
 ls -l "src-tauri/target/universal-apple-darwin/release/bundle/dmg/Claude Switch_<version>_universal.dmg"
+ls -l "src-tauri/target/universal-apple-darwin/release/bundle/claude-switch-vscode-<version>.vsix"
 ```
 
 ## 4. Commit the version and publish the release
@@ -107,7 +108,7 @@ Write short notes for people who use the app, not for developers:
 - `## What's new` and `## Fixes` sections, each a short list in plain
   language. Merge related commits; leave out chores, CI, tests and docs
   unless users notice them. Drop an empty section.
-- End with: `Download **Claude Switch_<version>_universal.dmg** below (Apple silicon and Intel), open it, and drag Claude Switch into Applications.`
+- End with: `Download **Claude Switch_<version>_universal.dmg** below (Apple silicon and Intel), open it, and drag Claude Switch into Applications. Only use VS Code? Install **claude-switch-vscode-<version>.vsix** with Extensions → … → Install from VSIX…; it works without the app.`
 - If the user agreed to an unsigned build in step 0, add:
   `This build is not signed with an Apple Developer ID.`
 
@@ -119,6 +120,7 @@ start of its line:
 ```bash
 gh release create v<version> \
   "src-tauri/target/universal-apple-darwin/release/bundle/dmg/Claude Switch_<version>_universal.dmg" \
+  "src-tauri/target/universal-apple-darwin/release/bundle/claude-switch-vscode-<version>.vsix" \
   --title "Claude Switch <version>" --target <sha> --notes "$(cat <<'EOF'
 <notes>
 EOF
@@ -127,7 +129,7 @@ EOF
 
 ## 5. Report
 
-Reply with the release URL that `gh` printed, the version, the DMG's size,
+Reply with the release URL that `gh` printed, the version, the DMG's and the extension's sizes,
 and whether the build was signed. If a step failed, say which one, what it
 printed, and what is already done (for example: built and pushed, release not
 created yet).

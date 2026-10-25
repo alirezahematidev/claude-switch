@@ -15,6 +15,9 @@ rust-version = "1.85"
 name = "claude_switch_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[workspace]
+members = ["core", "helper"]
+
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
 
@@ -27,17 +30,14 @@ tauri-plugin-autostart = "2.7"
 tauri-plugin-single-instance = "2.5"
 tauri-plugin-opener = "2.7"
 
+claude-switch-core = { path = "core" }
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-thiserror = "2"
 log = { version = "0.4", features = ["std"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
-rusqlite = { version = "0.41", features = ["bundled"] }
-portable-pty = "0.9"
 libc = "0.2"
 ts-rs = { version = "12", features = ["serde-compat", "no-serde-warnings"] }
-jsonc-parser = { version = "0.34", features = ["cst", "serde_json"] }
 
 [dev-dependencies]
 tempfile = "3"

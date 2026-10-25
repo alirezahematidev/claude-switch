@@ -453,12 +453,32 @@ pub fn list_sessions(
 
 /// Sessions left active by a previous run can no longer be running: their PTY
 /// died with the old process.
-pub fn mark_stale_sessions_interrupted(conn: &Connection, now: &str) -> AppResult<usize> {
-    Ok(conn.execute(
-        "UPDATE sessions SET status = 'interrupted', ended_at = COALESCE(ended_at, ?1)
-         WHERE status IN ('starting', 'running', 'stopping')",
-        [now],
-    )?)
+/// Marks sessions left active by a previous run as interrupted. A session
+/// whose process is still `alive` is left alone: the app and the editor
+/// helper share this database, and either may be running it.
+pub fn mark_stale_sessions_interrupted(
+    conn: &Connection,
+    now: &str,
+    alive: &dyn Fn(u32) -> bool,
+) -> AppResult<usize> {
+    let mut stmt = conn.prepare(
+        "SELECT id, process_id FROM sessions WHERE status IN ('starting', 'running', 'stopping')",
+    )?;
+    let active: Vec<(String, Option<i64>)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut marked = 0;
+    for (id, pid) in active {
+        if pid.and_then(|p| u32::try_from(p).ok()).is_some_and(alive) {
+            continue;
+        }
+        marked += conn.execute(
+            "UPDATE sessions SET status = 'interrupted', ended_at = COALESCE(ended_at, ?1)
+             WHERE id = ?2 AND status IN ('starting', 'running', 'stopping')",
+            [now, id.as_str()],
+        )?;
+    }
+    Ok(marked)
 }
 
 /// Keeps the newest `keep` session records.
@@ -696,7 +716,17 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(mark_stale_sessions_interrupted(&conn, "t1").unwrap(), 1);
+        // Still running in another process: left alone.
+        conn.execute("UPDATE sessions SET process_id = 42 WHERE id = 's'", [])
+            .unwrap();
+        assert_eq!(
+            mark_stale_sessions_interrupted(&conn, "t1", &|pid| pid == 42).unwrap(),
+            0
+        );
+        assert_eq!(
+            mark_stale_sessions_interrupted(&conn, "t1", &|_| false).unwrap(),
+            1
+        );
         assert_eq!(
             get_session(&conn, "s").unwrap().unwrap().status,
             SessionStatus::Interrupted

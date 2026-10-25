@@ -10,6 +10,7 @@
 | Conversations | Copied to the wrong place, overwritten, leaked | Copied only on request between verified profiles; never parsed, logged or stored; a diverged copy is never replaced |
 | Editor user settings | Corrupted or silently changed | One entry, on request; JSONC edited in place, backup first, atomic replace, re-read check |
 | Extension socket | Used by another user or to run arbitrary actions | 0600 socket in the 0700 managed folder, peer uid must match, six fixed methods, input limits; no method runs a program |
+| Extension helper | Driven by something other than its own window, or used to run arbitrary actions | Started by the extension as its child, spoken to only over its own stdin/stdout (no socket, no network); the app's command set with the same validation; no generic exec or file methods |
 | The user's machine | Arbitrary command execution from the UI | No generic exec or file APIs; fixed argv; capability allowlist |
 | Logs and diagnostics | Leaking secrets or personal data | Nothing sensitive is logged; mandatory redaction as a second layer |
 
@@ -54,6 +55,15 @@ environment the app was launched with.
    it is a socket nobody answers on; anything else at that path is left alone.
    Other same-user processes can use the socket too, but they could already
    read and write these files directly.
+   **The helper** (`src-tauri/helper`) is the same core behind the VS Code
+   extension. Only the process that started it can talk to it (its stdin and
+   stdout); it opens no socket or port. Its methods are the app's IPC
+   commands and the bridge methods above, with the same validation in
+   `AppCore` (IDs re-parsed, managed paths verified, signed-in targets only,
+   codes only to a running sign-in). Folders come from VS Code's workspace or
+   the user's folder picker, and must be absolute. Choosing the Claude Code
+   executable goes through the same check as the app's file picker. It ends
+   when its stdin closes, stopping the sessions it started.
 5. **Sign-in codes.** `submit_login_code` only writes to a running
    `claude auth login` session, only before it finishes, and only a single
    token without whitespace or control characters (≤ 4 KB). The sign-in URL

@@ -173,6 +173,9 @@ pub struct AppCore {
     login_shell_override: RwLock<Option<PathBuf>>,
     /// The user's login-shell environment, resolved once on first use.
     login_env: OnceLock<Option<BTreeMap<String, String>>>,
+    /// SQLite's `data_version` when this process last caught up with changes
+    /// made by another (the app and the editor helper share the database).
+    data_version: Mutex<Option<i64>>,
     this: Weak<AppCore>,
 }
 
@@ -220,16 +223,33 @@ impl AppCore {
             extension_package: RwLock::new(None),
             login_shell_override: RwLock::new(None),
             login_env: OnceLock::new(),
+            data_version: Mutex::new(None),
             this: weak.clone(),
         }))
     }
 
     /// One-time startup work. Blocking; run off the main thread.
     pub fn startup(&self) {
+        let status = self.prepare();
+        if self.settings().check_auth_on_startup && status.state == CliState::Found {
+            if let Ok(accounts) = self.list_accounts() {
+                for account in accounts {
+                    if let Err(e) = self.refresh_auth_status(&account.id) {
+                        log::warn!("startup status check failed for {}: {e}", account.id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Startup work without the sign-in checks: cleans up after a previous
+    /// run and finds Claude Code. Blocking.
+    pub fn prepare(&self) -> CliStatus {
         let now = clock::now();
         {
             let conn = self.db.conn();
-            match store::mark_stale_sessions_interrupted(&conn, &now) {
+            let alive = |pid: u32| live_sessions::is_alive(pid);
+            match store::mark_stale_sessions_interrupted(&conn, &now, &alive) {
                 Ok(n) if n > 0 => {
                     log::info!("marked {n} sessions from a previous run as interrupted")
                 }
@@ -242,19 +262,39 @@ impl AppCore {
         }
         let status = self.refresh_cli();
         log::info!("claude code: {:?} {:?}", status.state, status.version);
-        if self.settings().check_auth_on_startup && status.state == CliState::Found {
-            if let Ok(accounts) = self.list_accounts() {
-                for account in accounts {
-                    if let Err(e) = self.refresh_auth_status(&account.id) {
-                        log::warn!("startup status check failed for {}: {e}", account.id);
-                    }
-                }
-            }
-        }
+        self.sync_external_changes();
+        status
     }
 
     fn emit(&self, event: CoreEvent) {
         self.bridge.emit(event);
+    }
+
+    /// Catches up with changes another process (the app, or the editor
+    /// helper of another window) committed to the shared database: reloads
+    /// the settings and announces the change. Returns whether there was one.
+    pub fn sync_external_changes(&self) -> bool {
+        let version: Option<i64> = self
+            .db
+            .conn()
+            .query_row("PRAGMA data_version", [], |r| r.get(0))
+            .ok();
+        let previous = std::mem::replace(&mut *lock(&self.data_version), version);
+        if previous.is_none() || previous == version {
+            return false;
+        }
+        if let Ok(settings) = store::load_settings(&self.db.conn()) {
+            *self.settings.write().unwrap_or_else(|p| p.into_inner()) = settings;
+        }
+        for scope in [
+            ChangeScope::Accounts,
+            ChangeScope::Projects,
+            ChangeScope::Sessions,
+            ChangeScope::Settings,
+        ] {
+            self.emit(CoreEvent::Changed(scope));
+        }
+        true
     }
 
     // -----------------------------------------------------------------------

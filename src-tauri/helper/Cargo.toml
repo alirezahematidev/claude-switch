@@ -1,0 +1,23 @@
+[package]
+name = "claude-switch-helper"
+version = "0.1.0"
+description = "Claude Switch's core for the VS Code extension, driven over stdin and stdout"
+authors = ["Claude Switch contributors"]
+license = "MIT"
+publish = false
+edition = "2021"
+rust-version = "1.85"
+
+[[bin]]
+name = "claude-switch-helper"
+path = "src/main.rs"
+
+[dependencies]
+claude-switch-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = { version = "0.4", features = ["std"] }
+ts-rs = { version = "12", features = ["serde-compat", "no-serde-warnings"] }
+
+[dev-dependencies]
+tempfile = "3"

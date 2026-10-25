@@ -111,6 +111,11 @@ pub fn opened_by(config_dir: &Path, parent: u32) -> Vec<OpenConversation> {
     found.into_iter().map(|(_, c)| c).collect()
 }
 
+/// True if `pid` is a live process of the current user.
+pub fn is_alive(pid: u32) -> bool {
+    live_process(pid, None).is_some()
+}
+
 /// What the kernel reports about `pid`, if it is a live process of the
 /// current user that started no later than `registered` (seconds since the
 /// epoch, when known), so a process ID reused by an unrelated, newer process

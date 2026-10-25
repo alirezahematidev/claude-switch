@@ -502,11 +502,9 @@ dependencies = [
 name = "claude-switch"
 version = "0.1.2"
 dependencies = [
- "jsonc-parser",
+ "claude-switch-core",
  "libc",
  "log",
- "portable-pty",
- "rusqlite",
  "serde",
  "serde_json",
  "tauri",
@@ -518,10 +516,38 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tempfile",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
+name = "claude-switch-core"
+version = "0.1.0"
+dependencies = [
+ "jsonc-parser",
+ "libc",
+ "log",
+ "portable-pty",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "time",
  "ts-rs",
  "uuid",
+]
+
+[[package]]
+name = "claude-switch-helper"
+version = "0.1.0"
+dependencies = [
+ "claude-switch-core",
+ "log",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]

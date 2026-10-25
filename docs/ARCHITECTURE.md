@@ -9,7 +9,7 @@ React UI (src/features/*)                       presentation
 src-tauri/src/commands.rs                       IPC adapters (validated, no logic)
 src-tauri/src/desktop.rs                        menus, tray, window/quit lifecycle,
                                                 shortcuts, login item, notifications
-src-tauri/src/core.rs (AppCore)                 application services and invariants
+src-tauri/core/src/core.rs (AppCore)            application services and invariants
   ├─ store.rs + db.rs                           SQLite repositories and migrations
   ├─ pty.rs (PtyManager)                        PTYs, process groups, output buffers
   ├─ cli.rs                                     Claude Code discovery and CLI calls
@@ -18,6 +18,14 @@ src-tauri/src/core.rs (AppCore)                 application services and invaria
   ├─ env.rs                                     child environment construction
   └─ paths.rs                                   managed directories, path safety
 ```
+
+The Rust code is a Cargo workspace rooted at `src-tauri/`:
+
+| Crate | Path | |
+| --- | --- | --- |
+| `claude-switch-core` | `src-tauri/core` | Everything above `commands`: no UI dependency |
+| `claude-switch` | `src-tauri` | The Tauri app: `commands`, `desktop`; re-exports the core's modules |
+| `claude-switch-helper` | `src-tauri/helper` | The VS Code extension's helper: the core over stdin/stdout |
 
 `AppCore` has no Tauri dependency. UI side effects go through the `UiBridge`
 trait (implemented by `desktop::TauriBridge`), so the core is driven directly
@@ -134,14 +142,53 @@ Claude sessions feed their output through `usage_limit.rs`. On Claude Code's
 usage-limit wording it sets `SessionInfo.usageLimitReached` (memory only) and
 emits `session-updated`; the terminal shows a banner offering the handoff.
 
-## Editor extension and its socket
+## Editor extension and its helper
 
 `vscode-extension/` is a VS Code extension (`extensionKind: ui`, no runtime
-dependencies). It shows the account in the status bar and adds a
-`claudeSwitch.switchAccount` button to `editor/title` (next to Claude Code's)
-and to the Claude Code sidebar's `view/title`.
+dependencies) that works with or without the app, centred on switching the
+account Claude Code's extension uses. It adds a status bar item and a
+`claudeSwitch.switchAccount` button in `editor/title` (next to Claude Code's)
+and the Claude Code sidebar's `view/title`, an Accounts view in the activity
+bar (click an account to switch), and Claude terminals per account.
 
-It asks the app over `editor_bridge.rs`: a Unix socket at
+A switch is one step (`switcher.ts`): the conversations open in this window
+on another account (from Claude Code's session registry, `open`) are copied
+to the new account, the setting is written, their tabs close and reopen with
+the new account, and the window reloads when the Claude sidebar holds one
+(asking first only if Claude Switch terminals would close). Confirmation is
+a status bar message.
+
+Each window's extension host starts `bin/claude-switch-helper`
+(`src-tauri/helper`), the core with no UI, and speaks to it over stdin and
+stdout, one JSON message per line: requests `{id, method, params}`, responses
+`{id, result}` or `{id, error: {kind, message}}`, and events `{event, data}`
+(`changed`, `sessionUpdated`, `sessionFinished`, `loginProgress`,
+`loginCompleted`, `output` with base64 terminal bytes, `show`). Its methods
+mirror the app's IPC commands (`listAccounts`, `createAccount`, `startLogin`,
+`submitLoginCode`, `startSession`, `attachSession`, `writeSession`,
+`continueConversation`, `openInEditor`, …), plus the editor bridge's methods
+below, answered by the same `editor_bridge::respond`. There is no generic
+"run" or "read file" method. Closing stdin (the window is gone) stops the
+sessions it started.
+
+A Claude session is a `Pseudoterminal` whose output and input go through the
+helper's PTY, so the usage-limit detector and the sign-in parser work as in
+the app. Sign-in is a notification with **Open Sign-In Page**, **Copy Link**
+and **Enter Code**, fed by `loginProgress` events.
+
+**Sharing the database.** The app and any number of helpers (one per VS Code
+window) open the same SQLite database (WAL, 5 s busy timeout). Each process
+keeps its own sessions; at startup a session left `running` is marked
+`interrupted` only if its process is gone, so one process never interrupts
+another's. Each process notices the others' commits through `PRAGMA
+data_version` (`AppCore::sync_external_changes`, called when the app's window
+or a VS Code window gains focus), reloads its settings and announces the
+change. The helper logs to `claude-switch-helper.log` and skips the
+sign-in checks the app runs at startup.
+
+### The app's socket
+
+The app also answers the editor bridge (`editor_bridge.rs`) on a Unix socket at
 `~/.claude-switch/claude-switch.sock` (0600 in the 0700 managed folder, peer
 uid checked with `getpeereid`), one JSON request per connection, ≤ 64 KB, 10 s
 timeouts. Methods: `status` (app and protocol version), `accounts`,
@@ -154,7 +201,8 @@ The directory is canonicalized and must be an existing folder outside the
 app's own; it only selects which conversation folder to read. Protocol types
 are generated with ts-rs into `vscode-extension/src/bindings`.
 
-The extension then does the editor side itself: it writes
+Extensions up to 0.1.2 used it; the current extension asks its helper the
+same methods. Either way, the extension does the editor side itself: it writes
 `claudeCode.environmentVariables` through VS Code's configuration API (user
 settings, machine scope), closes the active Claude tab when continuing the
 latest conversation in it (the Claude Code extension would otherwise just
@@ -166,8 +214,6 @@ the sidebar holds there, with its old process. The extension finds it with
 from the same extension host), copies what is open to the new account and
 reloads the window, after which Claude Code resumes each tab's and the
 sidebar's conversation with the new account.
-If the socket is missing it runs `open -g -b dev.claudeswitch.desktop --args
---background` and waits for it.
 
 The app installs the extension with the editor's own `--install-extension
 <vsix> --force`; release builds bundle the `.vsix` as a resource

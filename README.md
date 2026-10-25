@@ -4,8 +4,9 @@
 [![Latest release](https://img.shields.io/github/v/release/alirezahematidev/claude-switch)](https://github.com/alirezahematidev/claude-switch/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A local-first macOS app for keeping several Claude Code accounts signed in at
-the same time and opening any of them with one click.
+A local-first macOS app, and a VS Code extension, for keeping several Claude
+Code accounts signed in at the same time and opening any of them with one
+click.
 
 Without it, switching accounts means `/logout`, a fresh sign-in, and waiting for
 an email link every time. Claude Switch gives each account its own Claude Code
@@ -21,8 +22,9 @@ inside an integrated terminal.
   including when a login is **not** isolated.
 - Hit a usage limit? **Continue in Another Account** hands the conversation,
   with its full history, to another account, in Claude Switch or in VS Code.
-- A **VS Code extension** puts an account switcher in VS Code's title bar and
-  status bar (also Cursor and Windsurf).
+- A **VS Code extension** does all of this inside VS Code (also Cursor and
+  Windsurf), with or without the app, and switches the account Claude Code's
+  own extension uses.
 - Local only: no server, no analytics, no telemetry.
 
 ## Requirements
@@ -53,6 +55,15 @@ projects are kept: they live outside the app, in `~/.claude-switch` and
 
 To build the app yourself instead, see [Development](#development)
 (`pnpm app:build` writes the `.dmg` to `src-tauri/target/release/bundle/dmg/`).
+
+### Only want VS Code?
+
+The extension works on its own. Download `claude-switch-vscode-<version>.vsix`
+from the [latest release](https://github.com/alirezahematidev/claude-switch/releases/latest)
+and install it with **Extensions → … → Install from VSIX…** (or
+`code --install-extension claude-switch-vscode-<version>.vsix`). Then open
+**Claude Switch** in the activity bar. Install the app later and it shows the
+same accounts. See [vscode-extension/README.md](vscode-extension/README.md).
 
 ## Getting started
 
@@ -163,35 +174,31 @@ What moves and what does not:
 ## Switching accounts inside VS Code
 
 Install the Claude Switch extension from **Settings → Editors → Install**
-(VS Code, VS Code Insiders, Cursor or Windsurf; it ships with the app). Then,
-in the editor:
+(VS Code, VS Code Insiders, Cursor or Windsurf; it ships with the app), or on
+its own from the release's `.vsix` (see [Only want VS Code?](#only-want-vs-code)).
+Then:
 
-- The **account button** sits in the editor title bar next to Claude Code's
-  own button (and in the Claude Code sidebar); the **status bar** shows the
-  account Claude Code uses there. Both open the switcher.
-- Pick an account, then **Continue this conversation** (copies the latest
-  conversation of the workspace with its full history, closes the window's
-  Claude tabs that still use another account, and reopens it with the new
-  one; in the Claude sidebar, it reloads the window instead), **New
-  conversation**, or **Only switch**.
-- **Per window** returns to each window using the account it was opened with.
+- Add and sign in your accounts in the **Claude Switch** view in the
+  activity bar.
+- Click the account in the **status bar** (or the button next to Claude
+  Code's in the title bar, or an account in the view) and pick another. Claude
+  Code uses it from then on, in every window. A conversation open in a Claude
+  tab is copied to the new account and reopens there with its full history;
+  in Claude's sidebar, the window reloads to do the same.
+- If something still runs with the old account, the status bar turns yellow;
+  click it to move it over.
+- **New Claude Terminal** on an account runs Claude Code with it in a
+  terminal, with the usage-limit handoff.
 
-A Claude tab keeps the account it started with until it is closed: its
-replies and `/usage` count against that account. Claude Code's extension
-also shows a single usage meter per window, fed by every Claude tab in it.
-So after a switch, Claude Switch offers to close the window's tabs that still
-use the previous account, and the status bar turns yellow while any are
-open. The Claude sidebar keeps its account the same way (while showing the
-new account's email) and cannot be closed, so Claude Switch copies its
-conversation and offers to reload the window instead. Claude Code's own **Logout** command and plan details keep using the
-account the window was opened with; to change those as well, open the folder
-from Claude Switch with the other account.
+Claude Code's own **Logout** command and plan details keep using the account
+the window was opened with; to change those as well, open the folder from
+Claude Switch with the other account.
 
-The extension talks only to Claude Switch on this Mac, through a socket that
-only your user can open (`~/.claude-switch/claude-switch.sock`); it starts the
-app in the background when needed. It chooses the account through the Claude
-Code extension's documented setting, so the same rules apply as above: every
-window's new Claude tabs, open tabs unchanged. Local windows only. Details:
+The extension runs Claude Switch's own core as a helper program started by
+each window (no network, no socket), on the same profiles and account list as
+the app. It chooses the account through the Claude Code extension's documented
+setting, so the same rules apply as above: every window's new Claude tabs,
+open tabs unchanged. Local windows only. Details:
 [vscode-extension/README.md](vscode-extension/README.md).
 
 Removing an account in Claude Switch also returns any editor set to it to
@@ -254,7 +261,8 @@ pnpm verify                  # types, oxlint, oxfmt check, unit tests, rustfmt, 
 pnpm format                  # oxfmt
 pnpm test:e2e                # Playwright flows + layout sweep (uses installed Google Chrome)
 pnpm bindings                # regenerate src/bindings (and the extension's protocol types)
-pnpm ext:package             # build vscode-extension/claude-switch-vscode.vsix
+pnpm helper:dev              # debug helper into vscode-extension/bin (then F5 the extension)
+pnpm ext:package             # universal helper + vscode-extension/claude-switch-vscode.vsix
 pnpm app:build               # release .app and .dmg, with the extension inside
 ```
 
@@ -268,11 +276,13 @@ Real-CLI smoke tests (need Claude Code installed; never sign in):
 
 | Path | Contents |
 | --- | --- |
-| `src-tauri/src` | Rust backend: `core` (services), `pty`, `cli`, `env`, `paths`, `db`/`store`, `commands` (IPC), `desktop` (menus, tray, lifecycle) |
+| `src-tauri/core` | Shared Rust core: `core` (services), `pty`, `cli`, `env`, `paths`, `db`/`store`, `transcripts`, `editor_bridge` |
+| `src-tauri/src` | The app: `commands` (IPC), `desktop` (menus, tray, lifecycle) |
+| `src-tauri/helper` | The VS Code extension's helper: the core over stdin/stdout |
 | `src-tauri/tests` | Integration, security, IPC and real-CLI tests (mock `claude` executable) |
 | `src` | React UI (`features/*`), typed IPC layer (`lib/ipc.ts`), generated types (`bindings/`) |
 | `e2e` | Playwright flows and layout sweep with a fake backend |
-| `vscode-extension` | The VS Code extension (TypeScript, no runtime dependencies) and its tests |
+| `vscode-extension` | The VS Code extension (TypeScript, no runtime dependencies; the helper in `bin/`) and its tests |
 | `docs` | Architecture, security, Claude Code integration, testing, release, status |
 
 Further reading: [Architecture](docs/ARCHITECTURE.md) ·

@@ -4,14 +4,14 @@ import type { InUse } from "../src/accounts";
 import type { BridgeAccount } from "../src/bindings/BridgeAccount";
 import type { BridgeConversation } from "../src/bindings/BridgeConversation";
 import type { BridgeOpenConversation } from "../src/bindings/BridgeOpenConversation";
-import { BridgeError, type Bridge } from "../src/bridge";
+import { HelperError } from "../src/helper";
 import {
   describeInUse,
-  otherTabsMessage,
-  sidebarMessage,
+  stillUsingMessage,
   Switcher,
   tabsAccountName,
   type PickItem,
+  type SwitcherBackend,
   type SwitcherHost,
   type TabAccount,
 } from "../src/switcher";
@@ -45,22 +45,22 @@ const older: BridgeConversation = {
 };
 
 const site = "/Users/me/code/site";
-const openOn = (conversation: BridgeConversation, accountId = conversation.accountId) => ({
-  sessionId: conversation.sessionId,
-  accountId,
-  directory: site,
-});
+const openOn = (
+  conversation: BridgeConversation,
+  accountId = conversation.accountId,
+): BridgeOpenConversation => ({ sessionId: conversation.sessionId, accountId, directory: site });
 
 interface Log {
   picks: { title: string; labels: string[] }[];
-  details: (string | undefined)[][];
   configDirs: (string | undefined)[];
   opened: (string | undefined)[];
   /** The account each close kept: tabs not using it were closed. */
   closedFor: string[];
   messages: string[];
+  notices: string[];
   handedOver: unknown[][];
-  shown: (string | undefined)[];
+  signedIn: string[];
+  added: number;
   reloads: number;
 }
 
@@ -73,10 +73,12 @@ function setup({
   accounts = [work, personal, expired],
   conversations = [latest, older],
   inUse = { dir: work.configDir, source: "window" },
-  otherTabs = [work.configDir],
+  otherTabs = [],
   open = [],
   handOverError,
   messageAction,
+  signInSucceeds = true,
+  terminals = false,
   claudeInstalled = true,
 }: {
   answers: string[];
@@ -90,26 +92,30 @@ function setup({
    * reports them on each call (the last answer repeats).
    */
   open?: BridgeOpenConversation[][];
-  handOverError?: BridgeError;
+  handOverError?: HelperError;
   messageAction?: string;
+  signInSucceeds?: boolean;
+  /** Claude Switch terminals are open. */
+  terminals?: boolean;
   claudeInstalled?: boolean;
 }) {
   const log: Log = {
     picks: [],
-    details: [],
     configDirs: [],
     opened: [],
     closedFor: [],
     messages: [],
+    notices: [],
     handedOver: [],
-    shown: [],
+    signedIn: [],
+    added: 0,
     reloads: 0,
   };
+  let list = accounts;
   const queue = [...answers];
   const host: SwitcherHost = {
     pick: <T>(items: PickItem<T>[], title: string) => {
       log.picks.push({ title, labels: items.filter((i) => !i.separator).map((i) => i.label) });
-      log.details.push(items.filter((i) => !i.separator).map((i) => i.detail));
       const want = queue.shift();
       const item = want ? items.find((i) => !i.separator && i.label.startsWith(want)) : undefined;
       return Promise.resolve(item?.value);
@@ -133,6 +139,8 @@ function setup({
       log.reloads++;
       return Promise.resolve();
     },
+    sessionTerminalsOpen: () => terminals,
+    notify: (message) => log.notices.push(message),
     info: (message) => {
       log.messages.push(message);
       return Promise.resolve(messageAction);
@@ -143,309 +151,226 @@ function setup({
     },
     withProgress: (_title, task) => task(),
     claudeInstalled: () => claudeInstalled,
+    addAccount: () => {
+      log.added++;
+      return Promise.resolve();
+    },
+    signIn: (id) => {
+      log.signedIn.push(id);
+      if (signInSucceeds) {
+        list = list.map((a) => (a.id === id ? { ...a, signedIn: true, status: "Signed in" } : a));
+      }
+      return Promise.resolve(signInSucceeds);
+    },
   };
-  const bridge = {
+  const backend: SwitcherBackend = {
     ensureRunning: () => Promise.resolve(),
-    accounts: () => Promise.resolve(accounts),
+    accounts: () => Promise.resolve(list),
     conversations: () => Promise.resolve(conversations),
-    openConversations: () => Promise.resolve(open.length > 1 ? open.shift() : (open[0] ?? [])),
+    openConversations: () => Promise.resolve((open.length > 1 ? open.shift() : open[0]) ?? []),
     handOver: (...args: unknown[]) => {
       log.handedOver.push(args);
       return handOverError ? Promise.reject(handOverError) : Promise.resolve({ copied: true });
     },
-    show: (id?: string) => {
-      log.shown.push(id);
-      return Promise.resolve();
-    },
-  } as unknown as Bridge;
-  return { switcher: new Switcher(bridge, host, () => Promise.resolve()), log };
+  };
+  return { switcher: new Switcher(backend, host, () => Promise.resolve()), log };
 }
 
 describe("Switcher", () => {
-  it("continues the latest conversation with another account in place of its tabs", async () => {
-    const { switcher, log } = setup({ answers: ["Personal", "Continue this conversation"] });
+  it("switches in one step when nothing is open here", async () => {
+    const { switcher, log } = setup({ answers: ["Personal"] });
     await switcher.run();
-
-    expect(log.picks[0]).toEqual({
-      title: "Claude Code account: Work",
-      labels: ["Work", "Personal", "Expired", "Open Claude Switch"],
-    });
-    expect(log.picks[1]?.labels).toEqual([
-      "Continue this conversation with Personal",
-      "Continue another conversation…",
-      "New conversation with Personal",
-      "Only switch",
+    expect(log.picks).toEqual([
+      {
+        title: "Switch Claude Code account",
+        labels: ["Work", "Personal", "Expired", "Add Account…"],
+      },
     ]);
+    expect(log.configDirs).toEqual([personal.configDir]);
+    expect(log.messages).toEqual([]);
+    expect(log.notices).toEqual(["Claude Code: Personal"]);
+  });
+
+  it("moves the conversation of a tab on the old account along", async () => {
+    const { switcher, log } = setup({
+      answers: ["Personal"],
+      otherTabs: [work.configDir],
+      // Before the switch, while the closed tab's process exits, then gone.
+      open: [[openOn(latest)], [openOn(latest)], []],
+    });
+    await switcher.run();
     expect(log.handedOver).toEqual([[site, latest.sessionId, work.id, personal.id]]);
     expect(log.configDirs).toEqual([personal.configDir]);
-    // Tabs still on Work close first, so the link opens a tab with Personal
-    // instead of focusing the conversation's old tab.
+    expect(log.closedFor).toEqual([personal.configDir]);
+    expect(log.opened).toEqual([latest.sessionId]);
+    expect(log.reloads).toBe(0);
+    expect(log.messages).toEqual([]);
+  });
+
+  it("reloads the window for the Claude sidebar", async () => {
+    const quiet = setup({ answers: ["Personal"], open: [[openOn(latest)]] });
+    await quiet.switcher.run();
+    expect(quiet.log.handedOver).toEqual([[site, latest.sessionId, work.id, personal.id]]);
+    expect(quiet.log.configDirs).toEqual([personal.configDir]);
+    expect(quiet.log.reloads).toBe(1);
+    expect(quiet.log.opened).toEqual([]);
+    expect(quiet.log.messages).toEqual([]);
+
+    // A reload would end Claude Switch terminals: ask first.
+    const asked = setup({ answers: ["Personal"], open: [[openOn(latest)]], terminals: true });
+    await asked.switcher.run();
+    expect(asked.log.messages).toEqual([
+      "Reload the window to switch the Claude sidebar to Personal? Claude Switch terminals will close.",
+    ]);
+    expect(asked.log.reloads).toBe(0);
+    expect(asked.log.configDirs).toEqual([personal.configDir]);
+
+    const accepted = setup({
+      answers: ["Personal"],
+      open: [[openOn(latest)]],
+      terminals: true,
+      messageAction: "Reload Window",
+    });
+    await accepted.switcher.run();
+    expect(accepted.log.reloads).toBe(1);
+  });
+
+  it("reopens a closed tab's conversation and reloads for the sidebar", async () => {
+    const tab = openOn(latest);
+    const sidebar = openOn(older, work.id);
+    const { switcher, log } = setup({
+      answers: ["Personal"],
+      otherTabs: [work.configDir],
+      open: [[tab, sidebar], [sidebar]],
+    });
+    await switcher.run();
+    expect(log.handedOver).toHaveLength(2);
+    expect(log.opened).toEqual([latest.sessionId]);
+    expect(log.reloads).toBe(1);
+  });
+
+  it("signs an account in first, then switches to it", async () => {
+    const signed = setup({ answers: ["Expired"] });
+    await signed.switcher.run();
+    expect(signed.log.signedIn).toEqual([expired.id]);
+    expect(signed.log.configDirs).toEqual([expired.configDir]);
+
+    const cancelled = setup({ answers: ["Expired"], signInSucceeds: false });
+    await cancelled.switcher.run();
+    expect(cancelled.log.configDirs).toEqual([]);
+  });
+
+  it("says so when the account is already in use", async () => {
+    const { switcher, log } = setup({
+      answers: ["Personal"],
+      inUse: { dir: personal.configDir, source: "settings" },
+    });
+    await switcher.run();
+    expect(log.configDirs).toEqual([]);
+    expect(log.notices).toEqual(["Claude Code already uses Personal"]);
+  });
+
+  it("moves what still uses the old account when the account in use is chosen", async () => {
+    const { switcher, log } = setup({
+      answers: [],
+      inUse: { dir: personal.configDir, source: "settings" },
+      otherTabs: [work.configDir],
+      open: [[openOn(latest)], []],
+    });
+    await switcher.switchTo(personal.id);
+    expect(log.picks).toEqual([]);
+    expect(log.configDirs).toEqual([]);
     expect(log.closedFor).toEqual([personal.configDir]);
     expect(log.opened).toEqual([latest.sessionId]);
   });
 
-  it("continues an older conversation from ~/.claude", async () => {
-    const { switcher, log } = setup({
-      answers: ["Personal", "Continue another", "Last active 2 hours ago"],
-      otherTabs: [],
-    });
-    await switcher.run();
-    expect(log.handedOver).toEqual([[site, older.sessionId, null, personal.id]]);
-    expect(log.opened).toEqual([older.sessionId]);
-  });
-
-  it("only switches, or starts a new conversation", async () => {
-    const only = setup({ answers: ["Personal", "Only switch"], otherTabs: [] });
-    await only.switcher.run();
-    expect(only.log.configDirs).toEqual([personal.configDir]);
-    expect(only.log.opened).toEqual([]);
-    expect(only.log.messages).toEqual(["New Claude tabs use Personal."]);
-
-    const fresh = setup({
-      answers: ["Personal", "New conversation"],
-      conversations: [],
-      otherTabs: [],
-    });
-    await fresh.switcher.run();
-    expect(fresh.log.picks[1]?.labels).toEqual(["New conversation with Personal", "Only switch"]);
-    expect(fresh.log.configDirs).toEqual([personal.configDir]);
-    expect(fresh.log.opened).toEqual([undefined]);
-    expect(fresh.log.handedOver).toEqual([]);
-  });
-
-  it("never switches to an account that is not signed in", async () => {
-    const { switcher, log } = setup({ answers: ["Expired"], messageAction: "Open Claude Switch" });
-    await switcher.run();
-    expect(log.messages).toEqual(["Expired: Sign-in required. Sign in with Claude Switch first."]);
-    expect(log.configDirs).toEqual([]);
-    expect(log.shown).toEqual([expired.id]);
-  });
-
   it("leaves everything as it was when the copy fails", async () => {
     const { switcher, log } = setup({
-      answers: ["Personal", "Continue this conversation"],
-      handOverError: new BridgeError("authRequired", "This account needs to sign in."),
+      answers: ["Personal"],
+      otherTabs: [work.configDir],
+      open: [[openOn(latest)]],
+      handOverError: new HelperError("conflict", "Personal has a different copy."),
     });
     await switcher.run();
-    expect(log.messages).toEqual(["error: This account needs to sign in."]);
+    expect(log.messages).toEqual(["error: Personal has a different copy."]);
     expect(log.configDirs).toEqual([]);
     expect(log.closedFor).toEqual([]);
-    expect(log.opened).toEqual([]);
+    expect(log.reloads).toBe(0);
+
+    const signedOut = setup({
+      answers: ["Personal"],
+      open: [[openOn(latest)]],
+      handOverError: new HelperError("authRequired", "Personal needs to sign in."),
+      messageAction: "Sign In",
+    });
+    await signedOut.switcher.run();
+    expect(signedOut.log.signedIn).toEqual([personal.id]);
   });
 
-  it("returns to per-window accounts", async () => {
-    const { switcher, log } = setup({
-      answers: ["Per window"],
-      inUse: { dir: personal.configDir, source: "settings" },
-    });
-    await switcher.run();
-    expect(log.picks[0]?.title).toBe("Claude Code account: Personal");
-    expect(log.configDirs).toEqual([undefined]);
+  it("offers to add an account", async () => {
+    const none = setup({ answers: [], accounts: [], messageAction: "Add Account" });
+    await none.switcher.run();
+    expect(none.log.messages).toEqual(["Add a Claude Code account first."]);
+    expect(none.log.added).toBe(1);
+
+    const picked = setup({ answers: ["Add Account"] });
+    await picked.switcher.run();
+    expect(picked.log.added).toBe(1);
+    expect(picked.log.configDirs).toEqual([]);
   });
 
   it("needs the Claude Code extension, which owns the setting", async () => {
     const { switcher, log } = setup({ answers: [], claudeInstalled: false });
     await switcher.run();
     expect(log.picks).toEqual([]);
-    expect(log.messages[0]).toMatch(/^error: Install Claude Code's extension first/);
+    expect(log.messages).toEqual(["error: Install Claude Code's VS Code extension first."]);
   });
 
-  it("does nothing for the account already in use", async () => {
-    const { switcher, log } = setup({ answers: ["Work"], otherTabs: [] });
-    await switcher.run();
-    expect(log.messages).toEqual(["Claude Code already uses Work here."]);
-    expect(log.configDirs).toEqual([]);
+  it("returns to per-window accounts", async () => {
+    const { switcher, log } = setup({ answers: [] });
+    await switcher.perWindow();
+    expect(log.configDirs).toEqual([undefined]);
+    expect(log.notices).toEqual(["Claude Code: each window's own account"]);
   });
 
-  it("offers to close tabs that still run with the previous account", async () => {
-    const declined = setup({ answers: ["Personal", "Only switch"] });
-    await declined.switcher.run();
-    expect(declined.log.configDirs).toEqual([personal.configDir]);
-    expect(declined.log.messages).toEqual([
-      "New Claude tabs use Personal. A Claude tab in this window still uses Work. It keeps running with Work until closed, so /usage there and this window's usage meter show Work's limits, not Personal's.",
-    ]);
-    expect(declined.log.closedFor).toEqual([]);
+  it("continues a chosen conversation in the panel", async () => {
+    const panel = setup({ answers: ["Last active 2 hours ago"] });
+    const conversation = await panel.switcher.pickConversation();
+    expect(conversation?.sessionId).toBe(older.sessionId);
+    if (!conversation) return;
+    await panel.switcher.continueInPanel(personal.id, conversation);
+    expect(panel.log.handedOver).toEqual([[site, older.sessionId, null, personal.id]]);
+    expect(panel.log.configDirs).toEqual([personal.configDir]);
+    expect(panel.log.closedFor).toEqual([personal.configDir]);
+    expect(panel.log.opened).toEqual([older.sessionId]);
 
-    const accepted = setup({
-      answers: ["Personal", "New conversation"],
-      otherTabs: [work.configDir, work.configDir],
-      messageAction: "Close Them",
-    });
-    await accepted.switcher.run();
-    expect(accepted.log.opened).toEqual([undefined]);
-    expect(accepted.log.messages[0]).toMatch(/^2 Claude tabs in this window still use Work\./);
-    expect(accepted.log.closedFor).toEqual([personal.configDir]);
-  });
+    // Open in the sidebar: it continues there after a reload.
+    const sidebar = setup({ answers: [], open: [[openOn(latest)]] });
+    await sidebar.switcher.continueInPanel(personal.id, { ...latest, directory: site });
+    expect(sidebar.log.reloads).toBe(1);
+    expect(sidebar.log.opened).toEqual([]);
 
-  it("explains what continuing closes", async () => {
-    const two = setup({ answers: ["Personal"], otherTabs: [work.configDir, null] });
-    await two.switcher.run();
-    expect(two.log.details[1]?.[0]).toBe(
-      "Closes the 2 Claude tabs here that use another account, then reopens the conversation with Personal, with its full history, in a new tab",
-    );
-    const one = setup({ answers: ["Personal"] });
-    await one.switcher.run();
-    expect(one.log.details[1]?.[0]).toBe(
-      "Closes the Claude tab here that uses Work, then reopens the conversation with Personal, with its full history, in a new tab",
-    );
-    const none = setup({ answers: ["Personal"], otherTabs: [] });
-    await none.switcher.run();
-    expect(none.log.details[1]?.[0]).toBe(
-      "Reopens the conversation with Personal, with its full history, in a new tab",
-    );
-  });
-
-  it("continues a conversation open in Claude's sidebar in place, with a reload", async () => {
-    const sidebar = openOn(latest);
-    const { switcher, log } = setup({
-      answers: ["Personal", "Continue this conversation"],
-      otherTabs: [],
-      open: [[sidebar, openOn(older, null)]],
-    });
-    await switcher.run();
-    expect(log.details[1]?.[0]).toBe(
-      "Reloads this window, so the conversation continues in place with Personal, with its full history",
-    );
-    // Both open conversations restart with Personal, so both are copied.
-    expect(log.handedOver).toEqual([
-      [site, latest.sessionId, work.id, personal.id],
-      [site, older.sessionId, null, personal.id],
-    ]);
-    expect(log.configDirs).toEqual([personal.configDir]);
-    expect(log.reloads).toBe(1);
-    // The link would only show the sidebar, still running with Work.
-    expect(log.opened).toEqual([]);
-    expect(log.closedFor).toEqual([]);
-  });
-
-  it("does not reload when the copy fails", async () => {
-    const { switcher, log } = setup({
-      answers: ["Personal", "Continue this conversation"],
-      otherTabs: [],
-      open: [[openOn(latest)]],
-      handOverError: new BridgeError("conflict", "Personal has a different copy."),
-    });
-    await switcher.run();
-    expect(log.messages).toEqual(["error: Personal has a different copy."]);
-    expect(log.configDirs).toEqual([]);
-    expect(log.reloads).toBe(0);
-  });
-
-  it("offers a reload when only switching leaves the sidebar on the old account", async () => {
-    const declined = setup({
-      answers: ["Personal", "Only switch"],
-      otherTabs: [],
-      open: [[openOn(latest)]],
-    });
-    await declined.switcher.run();
-    expect(declined.log.configDirs).toEqual([personal.configDir]);
-    expect(declined.log.messages).toEqual([
-      `New Claude tabs use Personal. ${sidebarMessage(0, "Work", "Personal")}`,
-    ]);
-    expect(declined.log.handedOver).toEqual([]);
-    expect(declined.log.reloads).toBe(0);
-
-    // A conversation nothing was written to yet has nothing to copy.
-    const accepted = setup({
-      answers: ["Personal", "Only switch"],
-      open: [[openOn(latest), openOn(older, work.id)]],
-      messageAction: "Reload Window",
-      handOverError: new BridgeError("notFound", "Conversation not found"),
-    });
-    await accepted.switcher.run();
-    expect(accepted.log.messages[0]).toMatch(
-      /^New Claude tabs use Personal\. The Claude sidebar and a Claude tab in this window still use Work,/,
-    );
-    expect(accepted.log.handedOver).toHaveLength(2);
-    expect(accepted.log.reloads).toBe(1);
-  });
-
-  it("finds the sidebar once the closed tabs are gone", async () => {
-    const tab = openOn(latest);
-    const sidebar = openOn(older, work.id);
-    // Two tabs, one of them never seen starting, so the sidebar cannot be told apart up front.
-    const elsewhere = setup({
-      answers: ["Personal", "Continue this conversation"],
-      otherTabs: [work.configDir, undefined],
-      open: [[tab, sidebar], [tab, sidebar], [sidebar]],
-      messageAction: "Reload Window",
-    });
-    await elsewhere.switcher.run();
-    expect(elsewhere.log.closedFor).toEqual([personal.configDir]);
-    expect(elsewhere.log.opened).toEqual([latest.sessionId]);
-    expect(elsewhere.log.messages).toEqual([sidebarMessage(0, "Work", "Personal")]);
-    expect(elsewhere.log.handedOver).toEqual([
-      [site, latest.sessionId, work.id, personal.id],
-      [site, older.sessionId, work.id, personal.id],
-    ]);
-    expect(elsewhere.log.reloads).toBe(1);
-
-    // The conversation itself is in the sidebar: opening it would only show it there.
-    const here = setup({
-      answers: ["Personal", "Continue this conversation"],
-      otherTabs: [work.configDir],
-      open: [[tab]],
-    });
-    await here.switcher.run();
-    expect(here.log.opened).toEqual([]);
-    expect(here.log.messages).toEqual([
-      "This conversation is open in the Claude sidebar, which keeps running it with Work. Reload the window to continue it with Personal, with its full history.",
-    ]);
-    expect(here.log.reloads).toBe(0);
-  });
-
-  it("offers a reload for the sidebar when the account in use is chosen again", async () => {
-    const { switcher, log } = setup({
-      answers: ["Personal"],
-      inUse: { dir: personal.configDir, source: "settings" },
-      otherTabs: [],
-      open: [[openOn(latest), openOn(older, personal.id)]],
-      messageAction: "Reload Window",
-    });
-    await switcher.run();
-    expect(log.messages[0]).toMatch(/^Claude Code uses Personal here\. The Claude sidebar in this/);
-    expect(log.handedOver).toEqual([[site, latest.sessionId, work.id, personal.id]]);
-    expect(log.reloads).toBe(1);
-  });
-
-  it("cleans up old tabs when the account in use is chosen again", async () => {
-    const { switcher, log } = setup({
-      answers: ["Personal"],
-      inUse: { dir: personal.configDir, source: "settings" },
-      otherTabs: [work.configDir],
-      messageAction: "Close Them",
-    });
-    await switcher.run();
-    expect(log.configDirs).toEqual([]);
-    expect(log.messages[0]).toMatch(
-      /^Claude Code uses Personal here\. A Claude tab in this window still uses Work\./,
-    );
-    expect(log.closedFor).toEqual([personal.configDir]);
+    const empty = setup({ answers: [], conversations: [] });
+    expect(await empty.switcher.pickConversation()).toBeUndefined();
+    expect(empty.log.messages).toEqual(["This workspace has no Claude Code conversations yet."]);
   });
 });
 
-describe("messages about other tabs", () => {
+describe("messages", () => {
   const accounts = [work, personal];
   it("names the account the tabs use", () => {
     expect(tabsAccountName([work.configDir, work.configDir], accounts)).toBe("Work");
     expect(tabsAccountName([null], accounts)).toBe("Claude Code's default account");
     expect(tabsAccountName([work.configDir, personal.configDir], accounts)).toBe("another account");
     expect(tabsAccountName([undefined], accounts)).toBe("another account");
-    expect(tabsAccountName(["/somewhere/else"], accounts)).toBe("another account");
   });
 
-  it("explains why the tabs matter", () => {
-    expect(otherTabsMessage(3, "Work", "Personal")).toBe(
-      "3 Claude tabs in this window still use Work. They keep running with Work until closed, so /usage there and this window's usage meter show Work's limits, not Personal's.",
-    );
-  });
-
-  it("explains why the sidebar matters", () => {
-    expect(sidebarMessage(0, "Work", "Personal")).toBe(
-      "The Claude sidebar in this window still uses Work, even where it shows Personal's email. It keeps running with Work, so /usage there and this window's usage meter show Work's limits. Reloading the window restarts it with Personal, with its full history.",
-    );
-    expect(sidebarMessage(2, "Work", "Personal")).toMatch(
-      /^The Claude sidebar and 2 Claude tabs in this window still use Work,.* They keep running .* restarts them with Personal, with their full history\.$/,
+  it("says what still uses the old account, in a few words", () => {
+    expect(stillUsingMessage(1, false, "Work")).toBe("A Claude tab still uses Work.");
+    expect(stillUsingMessage(2, false, "Work")).toBe("2 Claude tabs still use Work.");
+    expect(stillUsingMessage(0, true, "Work")).toBe("The Claude sidebar still uses Work.");
+    expect(stillUsingMessage(1, true, "Work")).toBe(
+      "The Claude sidebar and a Claude tab still use Work.",
     );
   });
 
@@ -454,7 +379,6 @@ describe("messages about other tabs", () => {
     const removed = `${home}/.claude-switch/profiles/0b7d4c1e-9a55-4f0e-8a51-2d3c4b5a6f70`;
     const used = { dir: removed, source: "settings" } as const;
     expect(describeInUse(used, undefined, accounts)).toBe("an account removed from Claude Switch");
-    // Without Claude Switch's list, it cannot tell.
     expect(describeInUse(used, undefined)).toBe("a folder that is not a Claude Switch account");
     expect(describeInUse({ dir: "/x", source: "settings" }, work, accounts)).toBe("Work");
     expect(describeInUse({ dir: undefined, source: "default" }, undefined, accounts)).toBe(

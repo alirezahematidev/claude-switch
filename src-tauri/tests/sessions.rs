@@ -488,11 +488,36 @@ fn metadata_survives_restart_and_stale_sessions_become_interrupted() {
         .start_session(TestApp::claude_input(&a, Some(&p.id)))
         .unwrap();
 
-    // Simulate a crash: the old core's sessions are left "running" in the DB.
+    // Another core opens the database while the first still runs the
+    // session (the app and the editor helper share it): it is left alone.
     let old = std::mem::replace(
         &mut app.core,
         TestApp::open_core(&app.paths, &app.paths.home).0,
     );
+    app.core.startup();
+    let status = |core: &claude_switch_lib::core::AppCore| {
+        core.list_sessions(ListSessionsInput {
+            account_id: None,
+            project_id: None,
+            limit: None,
+        })
+        .unwrap()[0]
+            .status
+    };
+    assert_eq!(status(&app.core), SessionStatus::Running);
+
+    // Simulate a crash: the row says "running", but its process is gone.
+    let mut gone = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+    let gone_pid = gone.id();
+    gone.wait().unwrap();
+    claude_switch_lib::db::Database::open(&app.paths.db_path)
+        .unwrap()
+        .conn()
+        .execute(
+            "UPDATE sessions SET process_id = ?1 WHERE id = ?2",
+            (gone_pid, s.id.as_str()),
+        )
+        .unwrap();
     app.core.startup();
 
     let accounts = app.core.list_accounts().unwrap();

@@ -99,31 +99,39 @@ organizations or plans. Record the Claude Code version (`claude --version`).
       continued; nothing in `~/.claude` changes.
 
 ## 8. VS Code extension
-- [ ] Settings → Editors → **Install** for VS Code: the row shows *Installed
-      (0.1.0)*; VS Code shows the account button next to Claude Code's in the
-      editor title bar and the account name in the status bar (no reload).
-- [ ] The status bar shows the right account for a window opened from Claude
-      Switch with A, for one opened normally (*Claude: default*), and after
-      choosing B (all windows).
-- [ ] In a Claude tab with a conversation, click the button → B → **Continue
-      this conversation**: the tab closes, a new one opens with the history and
-      "Continue where you left off." in the box; sending it answers as B
-      (`/status`). `settings.json` has one `CLAUDE_CONFIG_DIR` entry.
-- [ ] With `claudeCode.preferredLocation` set to `sidebar`, chat in the Claude
-      sidebar as A, then click the button → B → **Continue this
-      conversation**: its detail says the window reloads; after the reload the
-      sidebar shows the same conversation and answers as B (`/status`,
-      `/usage`). With **Only switch** instead, the status bar turns yellow and
-      the message offers **Reload Window**, with the same result.
-- [ ] **New conversation** and **Only switch** behave as described; **Per
-      window** removes the entry.
-- [ ] Choosing a signed-out account offers **Open Claude Switch**, which opens
-      that account's page.
-- [ ] Quit Claude Switch, then use the button: the app starts in the menu bar
-      and the switcher opens.
+On its own first (the app not installed, or quit, on a Mac with no
+`~/.claude-switch`), from the release's `.vsix`:
+- [ ] The Claude Switch view shows *Add Account*; adding A asks for a name,
+      then the sign-in method; Claude Code opens the browser, and the
+      notification offers **Open Page**, **Enter Code** and **Copy Link**.
+      After signing in, A shows its email and the status bar says
+      *A signed in*.
+- [ ] Add B the same way. Click B in the view (or the status bar → B): no
+      dialog, the status bar briefly shows *Claude Code: B* and then B; a new
+      Claude tab answers as B (`/status`). `settings.json` has one
+      `CLAUDE_CONFIG_DIR` entry.
+- [ ] With a conversation open in a Claude tab as A, switch to A: the tab
+      closes and reopens with the same history and "Continue where you left
+      off." in the box; sending it answers as A.
+- [ ] With `claudeCode.preferredLocation` set to `sidebar` and a
+      conversation there as B, switch to A: the window reloads and the
+      sidebar shows the same conversation, answering as A (`/status`,
+      `/usage`). With a Claude Switch terminal open, it asks before reloading.
+- [ ] Decline that reload: the status bar turns yellow; clicking it reloads.
+- [ ] A signed-out account in the picker starts its sign-in, then switches.
+- [ ] **New Claude Terminal** on A runs Claude Code as A in the workspace
+      folder; typing, resizing and closing work; closing stops it. After a
+      usage limit (or the mock wording) the notification offers **Switch
+      Account…**, which continues there with B and the full history.
+- [ ] **Continue a Conversation with Another Account…** and **Use Each
+      Window's Own Account** (view's … menu) work.
+- [ ] Edit (rename, color, move) and **Remove…** (both choices) behave like
+      the app.
+- [ ] Then install and open the app: it shows the same accounts; an account
+      added in one appears in the other when its window gains focus.
 - [ ] Cursor or Windsurf (if installed, with Claude Code's extension): install
       and switch work there too.
-- [ ] A remote (SSH) window: the button explains it is for local windows.
+- [ ] A remote (SSH) window: the commands explain they are for local windows.
 
 ## 9. macOS integration
 - [ ] Menu bar icon: per-account *New Claude Session* and recent projects work

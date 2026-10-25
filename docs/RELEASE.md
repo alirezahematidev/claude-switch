@@ -10,12 +10,19 @@ pnpm app:build        # → src-tauri/target/release/bundle/{macos,dmg}/
                       #   (packages vscode-extension first and bundles the .vsix)
 ```
 
+`pnpm ext:package` builds the extension's helper (`src-tauri/helper`) for both
+architectures into one binary (`lipo`), so it needs both Rust targets too, and
+packages it in `vscode-extension/claude-switch-vscode.vsix`. The helper is a
+plain executable inside the extension, ad-hoc signed as the Rust toolchain
+builds it; for distribution, sign it with the Developer ID too (see below).
+
 Universal release (Apple silicon + Intel), with the version to release:
 
 ```bash
 rustup target add aarch64-apple-darwin x86_64-apple-darwin   # once
 pnpm app:release 0.2.0
 # → src-tauri/target/universal-apple-darwin/release/bundle/dmg/Claude Switch_0.2.0_universal.dmg
+# → src-tauri/target/universal-apple-darwin/release/bundle/claude-switch-vscode-0.2.0.vsix
 ```
 
 `pnpm app:release <version>` ([scripts/release.mjs](../scripts/release.mjs))
@@ -31,8 +38,10 @@ In Claude Code, `/release <patch | minor | major | version>`
 ([.claude/skills/release](../.claude/skills/release/SKILL.md)) does the whole
 release: checks that `main` is clean and level with GitHub, installs the Rust
 targets, runs `pnpm app:release`, commits and pushes the version change, then
-creates the GitHub release with the DMG and release notes. It asks before
-publishing an unsigned build. Run `pnpm verify` and `pnpm test:e2e` first.
+creates the GitHub release with the DMG, the extension's `.vsix` (for people
+who only use VS Code) and release notes. It asks before publishing an
+unsigned build. Publishing the extension to the VS Code Marketplace is a
+separate step (see [VS Code Marketplace](#vs-code-marketplace-and-open-vsx)). Run `pnpm verify` and `pnpm test:e2e` first.
 
 An unsigned build runs locally. Other Macs will block it with Gatekeeper.
 Don't ask users to disable Gatekeeper; sign and notarize instead.
@@ -93,6 +102,41 @@ gh release create "v$VERSION" \
   "src-tauri/target/universal-apple-darwin/release/bundle/dmg/Claude Switch_${VERSION}_universal.dmg" \
   --title "Claude Switch $VERSION" --notes "…"
 ```
+
+### VS Code Marketplace and Open VSX
+
+The extension contains a macOS binary (the helper), so it is published for
+macOS only (`darwin-arm64` and `darwin-x64`, the same universal binary in
+each); the Marketplace then does not offer it on Windows or Linux.
+
+Once:
+
+1. Create a publisher at <https://marketplace.visualstudio.com/manage> (a
+   Microsoft account). Its ID must equal `"publisher"` in
+   `vscode-extension/package.json` and the prefix of `EXTENSION_ID` in
+   `src-tauri/core/src/editors.rs` (the app finds the installed extension by
+   it); change both together. `claude-switch` is taken by someone else.
+2. Create an Azure DevOps personal access token with the **Marketplace →
+   Manage** scope and *All accessible organizations*, then
+   `npx vsce login <publisher>`.
+
+Each release, after `pnpm app:release`:
+
+```bash
+pnpm ext:publish        # builds, then: vsce publish --target darwin-arm64 darwin-x64
+```
+
+Cursor and Windsurf install extensions from [Open VSX](https://open-vsx.org)
+instead. With a namespace and token from open-vsx.org:
+
+```bash
+cd vscode-extension
+npx ovsx publish --target darwin-arm64 darwin-x64 -p <token>
+```
+
+The listing uses `vscode-extension/README.md`, `icon.png` and `LICENSE`.
+"Claude" and "Claude Code" are Anthropic's trademarks; the README says the
+extension is not affiliated with Anthropic.
 
 ## Versioning
 

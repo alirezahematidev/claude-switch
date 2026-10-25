@@ -9,12 +9,18 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
 const MAX_LOG_BYTES: u64 = 2 * 1024 * 1024;
 pub const LOG_FILE: &str = "claude-switch.log";
+/// The file this process logs to (each program has its own).
+static LOG_NAME: OnceLock<&'static str> = OnceLock::new();
+
+fn log_name() -> &'static str {
+    LOG_NAME.get().copied().unwrap_or(LOG_FILE)
+}
 
 struct FileLogger {
     path: PathBuf,
@@ -85,7 +91,13 @@ impl Log for FileLogger {
 }
 
 pub fn init(logs_dir: &Path) {
-    let path = logs_dir.join(LOG_FILE);
+    init_as(logs_dir, LOG_FILE);
+}
+
+/// Like [`init`], logging to `name` in `logs_dir`.
+pub fn init_as(logs_dir: &Path, name: &'static str) {
+    let _ = LOG_NAME.set(name);
+    let path = logs_dir.join(log_name());
     let logger = FileLogger {
         file: Mutex::new(open_log(&path).ok()),
         path,
@@ -103,7 +115,7 @@ pub fn init(logs_dir: &Path) {
 
 /// Last `max_lines` lines of the log, already redacted when written.
 pub fn tail(logs_dir: &Path, max_lines: usize) -> Vec<String> {
-    let Ok(contents) = fs::read_to_string(logs_dir.join(LOG_FILE)) else {
+    let Ok(contents) = fs::read_to_string(logs_dir.join(log_name())) else {
         return Vec::new();
     };
     let lines: Vec<&str> = contents.lines().collect();

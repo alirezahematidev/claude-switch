@@ -3,16 +3,18 @@
   "displayName": "Claude Switch",
   "version": "0.1.2",
   "private": true,
-  "description": "Switch the account Claude Code uses in this editor, and continue a conversation with another account after a usage limit.",
+  "description": "Switch Claude Code between your accounts in one click. Each account stays signed in, and your open conversation moves with you.",
   "categories": [
     "Other"
   ],
   "keywords": [
     "accounts",
     "claude",
-    "claude code"
+    "claude code",
+    "profiles",
+    "usage limit"
   ],
-  "homepage": "https://github.com/alirezahematidev/claude-switch#switching-accounts-inside-vs-code",
+  "homepage": "https://github.com/alirezahematidev/claude-switch/tree/main/vscode-extension#readme",
   "bugs": {
     "url": "https://github.com/alirezahematidev/claude-switch/issues"
   },
@@ -33,8 +35,73 @@
         "icon": "$(account)"
       },
       {
-        "command": "claudeSwitch.openApp",
-        "title": "Open Claude Switch",
+        "command": "claudeSwitch.statusBarClicked",
+        "title": "Switch Claude Code Account",
+        "category": "Claude Switch"
+      },
+      {
+        "command": "claudeSwitch.useAccount",
+        "title": "Switch to This Account",
+        "category": "Claude Switch",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "claudeSwitch.addAccount",
+        "title": "Add Account…",
+        "category": "Claude Switch",
+        "icon": "$(add)"
+      },
+      {
+        "command": "claudeSwitch.signIn",
+        "title": "Sign In…",
+        "category": "Claude Switch",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "claudeSwitch.editAccount",
+        "title": "Edit…",
+        "category": "Claude Switch"
+      },
+      {
+        "command": "claudeSwitch.removeAccount",
+        "title": "Remove…",
+        "category": "Claude Switch"
+      },
+      {
+        "command": "claudeSwitch.newSession",
+        "title": "New Claude Terminal",
+        "category": "Claude Switch",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "claudeSwitch.continueConversation",
+        "title": "Continue a Conversation with Another Account…",
+        "category": "Claude Switch"
+      },
+      {
+        "command": "claudeSwitch.perWindow",
+        "title": "Use Each Window's Own Account",
+        "category": "Claude Switch"
+      },
+      {
+        "command": "claudeSwitch.refresh",
+        "title": "Check Accounts",
+        "category": "Claude Switch",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeSwitch.chooseClaudeExecutable",
+        "title": "Choose Claude Code Executable…",
+        "category": "Claude Switch"
+      },
+      {
+        "command": "claudeSwitch.showDiagnostics",
+        "title": "Show Diagnostics",
+        "category": "Claude Switch"
+      },
+      {
+        "command": "claudeSwitch.showLog",
+        "title": "Show Log",
         "category": "Claude Switch"
       }
     ],
@@ -51,6 +118,91 @@
           "command": "claudeSwitch.switchAccount",
           "when": "view == claudeVSCodeSidebar || view == claudeVSCodeSidebarSecondary",
           "group": "navigation"
+        },
+        {
+          "command": "claudeSwitch.addAccount",
+          "when": "view == claudeSwitch.accounts",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeSwitch.refresh",
+          "when": "view == claudeSwitch.accounts",
+          "group": "navigation@2"
+        },
+        {
+          "command": "claudeSwitch.continueConversation",
+          "when": "view == claudeSwitch.accounts",
+          "group": "1_more@1"
+        },
+        {
+          "command": "claudeSwitch.perWindow",
+          "when": "view == claudeSwitch.accounts",
+          "group": "1_more@2"
+        },
+        {
+          "command": "claudeSwitch.chooseClaudeExecutable",
+          "when": "view == claudeSwitch.accounts",
+          "group": "2_setup"
+        },
+        {
+          "command": "claudeSwitch.showDiagnostics",
+          "when": "view == claudeSwitch.accounts",
+          "group": "3_help@1"
+        },
+        {
+          "command": "claudeSwitch.showLog",
+          "when": "view == claudeSwitch.accounts",
+          "group": "3_help@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "claudeSwitch.newSession",
+          "when": "view == claudeSwitch.accounts && viewItem =~ /signedIn/",
+          "group": "inline"
+        },
+        {
+          "command": "claudeSwitch.useAccount",
+          "when": "view == claudeSwitch.accounts && viewItem =~ /signedIn/",
+          "group": "1_use@1"
+        },
+        {
+          "command": "claudeSwitch.newSession",
+          "when": "view == claudeSwitch.accounts && viewItem =~ /signedIn/",
+          "group": "1_use@2"
+        },
+        {
+          "command": "claudeSwitch.signIn",
+          "when": "view == claudeSwitch.accounts && viewItem =~ /^account/",
+          "group": "2_account@1"
+        },
+        {
+          "command": "claudeSwitch.editAccount",
+          "when": "view == claudeSwitch.accounts && viewItem =~ /^account/",
+          "group": "2_account@2"
+        },
+        {
+          "command": "claudeSwitch.removeAccount",
+          "when": "view == claudeSwitch.accounts && viewItem =~ /^account/",
+          "group": "9_remove"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "claudeSwitch.statusBarClicked",
+          "when": "false"
+        },
+        {
+          "command": "claudeSwitch.useAccount",
+          "when": "false"
+        },
+        {
+          "command": "claudeSwitch.editAccount",
+          "when": "false"
+        },
+        {
+          "command": "claudeSwitch.removeAccount",
+          "when": "false"
         }
       ]
     },
@@ -72,15 +224,32 @@
           "default": "Continue where you left off.",
           "maxLength": 500,
           "description": "Placed in the message box when a conversation continues with another account. Leave empty for none."
-        },
-        "claudeSwitch.socketPath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "description": "Claude Switch's socket. Leave empty for the default (~/.claude-switch/claude-switch.sock)."
         }
       }
-    }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeSwitch",
+          "title": "Claude Switch",
+          "icon": "media/accounts.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeSwitch": [
+        {
+          "id": "claudeSwitch.accounts",
+          "name": "Accounts"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "claudeSwitch.accounts",
+        "contents": "Add your Claude Code accounts, then switch between them in one click.\n[Add Account](command:claudeSwitch.addAccount)"
+      }
+    ]
   },
   "activationEvents": [
     "onStartupFinished"
@@ -101,5 +270,6 @@
       "supported": true
     },
     "virtualWorkspaces": false
-  }
+  },
+  "pricing": "Free"
 }

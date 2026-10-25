@@ -485,6 +485,14 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
     if window.label() != MAIN_WINDOW {
         return;
     }
+    // The VS Code extension's helper may have changed accounts or projects.
+    if let WindowEvent::Focused(true) = event {
+        if let Some(core) = core_from(window.app_handle()) {
+            std::thread::spawn(move || {
+                core.sync_external_changes();
+            });
+        }
+    }
     if let WindowEvent::CloseRequested { api, .. } = event {
         if QUITTING.load(Ordering::SeqCst) {
             return;
