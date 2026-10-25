@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-install-editor-extension"
+description = "Enables the install_editor_extension command without any pre-configured scope."
+commands.allow = ["install_editor_extension"]
+
+[[permission]]
+identifier = "deny-install-editor-extension"
+description = "Denies the install_editor_extension command without any pre-configured scope."
+commands.deny = ["install_editor_extension"]

@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "semi": true,
+  "singleQuote": false,
+  "trailingComma": "all",
+  "sortTailwindcss": {
+    "stylesheet": "./src/styles/globals.css",
+    "functions": ["cn", "cva"]
+  },
+  "sortImports": {
+    "internalPattern": ["@/"],
+    "groups": [["builtin", "external"], "internal", ["parent", "sibling", "index"]]
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "src/bindings/**",
+    "src-tauri/target/**",
+    "src-tauri/gen/**",
+    "src-tauri/icons/**",
+    "pnpm-lock.yaml",
+    "test-results/**",
+    "playwright-report/**",
+    "**/*.md",
+    "e2e-screens/**",
+    "vscode-extension/src/bindings/**",
+    "vscode-extension/out/**",
+    "vscode-extension/*.vsix"
+  ]
+}

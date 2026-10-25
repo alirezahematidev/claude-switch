@@ -1,0 +1,91 @@
+{
+  "name": "claude-switch-vscode",
+  "displayName": "Claude Switch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Switch the account Claude Code uses in this editor, and continue a conversation with another account after a usage limit.",
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "accounts",
+    "claude",
+    "claude code"
+  ],
+  "license": "UNLICENSED",
+  "publisher": "claude-switch",
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeSwitch.switchAccount",
+        "title": "Switch Claude Code Account",
+        "category": "Claude Switch",
+        "icon": "$(account)"
+      },
+      {
+        "command": "claudeSwitch.openApp",
+        "title": "Open Claude Switch",
+        "category": "Claude Switch"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "claudeSwitch.switchAccount",
+          "when": "config.claudeSwitch.showInEditorTitle && !isWeb",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "claudeSwitch.switchAccount",
+          "when": "view == claudeVSCodeSidebar || view == claudeVSCodeSidebarSecondary",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Claude Switch",
+      "properties": {
+        "claudeSwitch.showInEditorTitle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the account switcher in the editor title bar, next to Claude Code's button."
+        },
+        "claudeSwitch.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Claude Code account in the status bar."
+        },
+        "claudeSwitch.continueMessage": {
+          "type": "string",
+          "default": "Continue where you left off.",
+          "maxLength": 500,
+          "description": "Placed in the message box when a conversation continues with another account. Leave empty for none."
+        },
+        "claudeSwitch.socketPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Claude Switch's socket. Leave empty for the default (~/.claude-switch/claude-switch.sock)."
+        }
+      }
+    }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  }
+}

@@ -1,0 +1,3 @@
+allowBuilds:
+  # Only used to sign marketplace uploads, which this project does not do.
+  "@vscode/vsce-sign": false

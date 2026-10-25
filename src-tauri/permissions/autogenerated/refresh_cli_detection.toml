@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-refresh-cli-detection"
+description = "Enables the refresh_cli_detection command without any pre-configured scope."
+commands.allow = ["refresh_cli_detection"]
+
+[[permission]]
+identifier = "deny-refresh-cli-detection"
+description = "Denies the refresh_cli_detection command without any pre-configured scope."
+commands.deny = ["refresh_cli_detection"]

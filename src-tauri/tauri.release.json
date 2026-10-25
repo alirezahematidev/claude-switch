@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../vscode-extension/claude-switch-vscode.vsix": "claude-switch-vscode.vsix"
+    }
+  }
+}

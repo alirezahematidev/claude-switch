@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-editor-account"
+description = "Enables the set_editor_account command without any pre-configured scope."
+commands.allow = ["set_editor_account"]
+
+[[permission]]
+identifier = "deny-set-editor-account"
+description = "Denies the set_editor_account command without any pre-configured scope."
+commands.deny = ["set_editor_account"]
