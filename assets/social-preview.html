@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Claude Switch social preview</title>
+    <!--
+      GitHub social preview (1280×640). Render with:
+      pnpm exec playwright screenshot --channel chrome --viewport-size=1280,640 \
+        "file://$PWD/assets/social-preview.html" assets/social-preview.png
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #100f33;
+      }
+      body {
+        width: 1280px;
+        height: 640px;
+        overflow: hidden;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+        color: #fff;
+        -webkit-font-smoothing: antialiased;
+      }
+      .card {
+        position: relative;
+        width: 1280px;
+        height: 640px;
+        overflow: hidden;
+        background: linear-gradient(135deg, #312d7f 0%, #1b1953 48%, #0d0c2a 100%);
+      }
+      .glow {
+        position: absolute;
+        border-radius: 50%;
+      }
+      .glow.warm {
+        width: 720px;
+        height: 720px;
+        left: -170px;
+        top: -260px;
+        background: radial-gradient(closest-side, rgba(255, 128, 64, 0.26), rgba(255, 128, 64, 0));
+      }
+      .glow.cool {
+        width: 860px;
+        height: 860px;
+        right: -260px;
+        bottom: -420px;
+        background: radial-gradient(closest-side, rgba(79, 134, 255, 0.3), rgba(79, 134, 255, 0));
+      }
+      .watermark {
+        position: absolute;
+        right: -250px;
+        top: -40px;
+        width: 720px;
+        height: 720px;
+        opacity: 0.05;
+      }
+      .content {
+        position: absolute;
+        inset: 0 0 64px;
+        display: flex;
+        align-items: center;
+        gap: 64px;
+        padding: 0 96px;
+      }
+      .icon {
+        flex: none;
+        width: 264px;
+        height: 264px;
+        filter: drop-shadow(0 28px 48px rgba(5, 6, 26, 0.6));
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: 84px;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        line-height: 1;
+      }
+      .tagline {
+        margin: 0 0 34px;
+        max-width: 740px;
+        font-size: 31px;
+        line-height: 1.32;
+        color: #d4d6f8;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        max-width: 760px;
+      }
+      .chip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 18px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.07);
+        font-size: 21px;
+        color: #eef0ff;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      footer {
+        position: absolute;
+        left: 96px;
+        right: 96px;
+        bottom: 40px;
+        display: flex;
+        justify-content: space-between;
+        font-size: 20px;
+        color: rgba(222, 224, 255, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="glow warm"></div>
+      <div class="glow cool"></div>
+      <svg class="watermark" viewBox="0 0 1024 1024" aria-hidden="true">
+        <g
+          fill="none"
+          stroke="#fff"
+          stroke-width="104"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M300 236 L548 392 L300 548" />
+          <path d="M724 476 L476 632 L724 788" />
+        </g>
+      </svg>
+
+      <div class="content">
+        <img class="icon" src="extension-icon.svg" alt="" />
+        <div>
+          <h1>Claude Switch</h1>
+          <p class="tagline">
+            Keep several Claude Code accounts signed in<br />side by side, and switch with one
+            click.
+          </p>
+          <div class="chips">
+            <span class="chip"
+              ><span class="dot" style="background: #f97316"></span>One profile per account</span
+            >
+            <span class="chip"
+              ><span class="dot" style="background: #0ea5e9"></span>Continue after a usage
+              limit</span
+            >
+            <span class="chip"
+              ><span class="dot" style="background: #8b5cf6"></span>VS Code extension</span
+            >
+            <span class="chip"
+              ><span class="dot" style="background: #22c55e"></span>Local only</span
+            >
+          </div>
+        </div>
+      </div>
+
+      <footer>
+        <span>macOS · Open source (MIT) · Not affiliated with Anthropic</span>
+        <span>github.com/alirezahematidev/claude-switch</span>
+      </footer>
+    </div>
+  </body>
+</html>
