@@ -1,7 +1,7 @@
 {
   "name": "claude-switch-vscode",
   "displayName": "Claude Switch",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Switch the account Claude Code uses in this editor, and continue a conversation with another account after a usage limit.",
   "categories": [

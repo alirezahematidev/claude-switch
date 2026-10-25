@@ -500,7 +500,7 @@ dependencies = [
 
 [[package]]
 name = "claude-switch"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "jsonc-parser",
  "libc",
