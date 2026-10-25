@@ -1,5 +1,9 @@
 # Claude Switch
 
+[![CI](https://github.com/alirezahematidev/claude-switch/actions/workflows/ci.yml/badge.svg)](https://github.com/alirezahematidev/claude-switch/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/alirezahematidev/claude-switch)](https://github.com/alirezahematidev/claude-switch/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A local-first macOS app for keeping several Claude Code accounts signed in at
 the same time and opening any of them with one click.
 
@@ -257,5 +261,14 @@ Further reading: [Architecture](docs/ARCHITECTURE.md) ·
 [Manual test checklist](docs/MANUAL_TESTING.md) · [Release, signing and notarization](docs/RELEASE.md) ·
 [Project status](docs/STATUS.md)
 
-Claude Switch is an independent tool. It is not made by or affiliated with
+## Contributing
+
+Bug reports, fixes and ideas are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md)
+for setup and the pull request checklist, and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as
+described in [SECURITY.md](SECURITY.md), not in public issues.
+
+## License
+
+[MIT](LICENSE). Claude Switch is an independent tool. It is not made by or affiliated with
 Anthropic.

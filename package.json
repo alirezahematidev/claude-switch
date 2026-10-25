@@ -3,7 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "description": "Local-first macOS manager for multiple Claude Code accounts",
+  "keywords": [
+    "accounts",
+    "claude",
+    "claude-code",
+    "macos",
+    "tauri"
+  ],
+  "homepage": "https://github.com/alirezahematidev/claude-switch#readme",
+  "bugs": {
+    "url": "https://github.com/alirezahematidev/claude-switch/issues"
+  },
   "license": "MIT",
+  "author": "Claude Switch contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alirezahematidev/claude-switch.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -27,7 +43,7 @@
     "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm rust:fmt:check && pnpm rust:lint && pnpm rust:test",
     "lint:fix": "oxlint --type-aware --fix",
     "ext:build": "tsc -p vscode-extension/tsconfig.build.json",
-    "ext:package": "pnpm ext:build && cd vscode-extension && vsce package --no-dependencies --skip-license --allow-missing-repository --out claude-switch-vscode.vsix"
+    "ext:package": "pnpm ext:build && cd vscode-extension && vsce package --no-dependencies --skip-license --out claude-switch-vscode.vsix"
   },
   "dependencies": {
     "@tanstack/react-query": "5.104.5",

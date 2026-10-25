@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest a new feature or a change to how something works.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How you'd like it to work.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other approaches you've thought about.
+  - type: checkboxes
+    id: isolation
+    attributes:
+      label: Account isolation
+      options:
+        - label: This keeps each account's sign-in, settings and conversations separate, unless I ask to move something.

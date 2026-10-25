@@ -1,0 +1,86 @@
+name: Bug report
+description: Something in Claude Switch or its VS Code extension doesn't work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please **don't paste tokens, sign-in links, emails or conversation content**; replace them with made-up values.
+        Security problems go through [private reporting](https://github.com/alirezahematidev/claude-switch/security/advisories/new) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add an account …
+        2. Open a project with …
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Accounts and sign-in
+        - Sessions and terminal
+        - Projects
+        - Continue in another account
+        - VS Code extension / editors
+        - Menu bar, shortcuts, notifications
+        - Settings
+        - Install or update
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: sign-in
+    attributes:
+      label: Sign-in method of the affected account
+      options:
+        - Claude subscription (Pro, Max, Team, Enterprise)
+        - Anthropic Console with an API key
+        - Anthropic Console without an API key
+        - Bedrock, Vertex AI, Foundry or apiKeyHelper
+        - Not related to an account
+  - type: input
+    id: app-version
+    attributes:
+      label: Claude Switch version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`.
+      placeholder: "2.1.236"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac type
+      placeholder: "macOS 26.2, Apple silicon"
+    validations:
+      required: true
+  - type: input
+    id: editor
+    attributes:
+      label: Editor and version (if relevant)
+      placeholder: "VS Code 1.143, Claude Code extension 2.1.310"
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Settings → Troubleshooting → **Copy Diagnostics**, then paste here. The report leaves out names, emails, tokens, environment values and terminal output, but please read it before posting.
+      render: text

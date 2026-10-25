@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/alirezahematidev/claude-switch/security/advisories/new
+    about: Report security problems privately, not as a public issue.
+  - name: Problem with Claude Code itself
+    url: https://github.com/anthropics/claude-code/issues
+    about: Bugs in the Claude Code CLI or its VS Code extension belong in Anthropic's tracker.

@@ -12,7 +12,16 @@
     "claude",
     "claude code"
   ],
-  "license": "UNLICENSED",
+  "homepage": "https://github.com/alirezahematidev/claude-switch#switching-accounts-inside-vs-code",
+  "bugs": {
+    "url": "https://github.com/alirezahematidev/claude-switch/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alirezahematidev/claude-switch.git",
+    "directory": "vscode-extension"
+  },
   "publisher": "claude-switch",
   "main": "./out/extension.js",
   "contributes": {
