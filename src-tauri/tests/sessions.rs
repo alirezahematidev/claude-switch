@@ -313,6 +313,42 @@ fn missing_cli_produces_a_useful_error() {
 }
 
 #[test]
+fn a_slow_startup_check_does_not_undo_a_chosen_executable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let app = TestApp::new();
+    // Auto-detection looks here first, and this one is slow to answer.
+    let slow = app.paths.home.join(".local/bin/claude");
+    fs::create_dir_all(slow.parent().unwrap()).unwrap();
+    fs::write(
+        &slow,
+        "#!/bin/bash\nsleep 1\necho \"2.1.999 (Claude Code)\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&slow, fs::Permissions::from_mode(0o755)).unwrap();
+    let choose = |path: String| {
+        app.core
+            .update_settings(SettingsPatch {
+                claude_executable_path: Some(path),
+                ..Default::default()
+            })
+            .unwrap()
+    };
+    choose(String::new());
+
+    // The startup check is still running when the user chooses the mock.
+    let core = app.core.clone();
+    let startup = std::thread::spawn(move || core.refresh_cli());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    choose(app.mock.display().to_string());
+    let stale = startup.join().unwrap();
+
+    let mock = Some(app.mock.display().to_string());
+    assert_eq!(stale.path, mock, "the slow check reports the newer answer");
+    assert_eq!(app.core.cli_status().path, mock);
+}
+
+#[test]
 fn missing_project_directory_is_reported_and_never_replaced_with_home() {
     let app = TestApp::new();
     let a = app.account("A");

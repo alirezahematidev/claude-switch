@@ -9,6 +9,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock, Weak};
 use std::time::Duration;
 
@@ -147,6 +148,8 @@ struct Launch<'a> {
 struct CliCache {
     status: CliStatus,
     exe: Option<CliExecutable>,
+    /// Which refresh found it (see `AppCore::cli_refreshes`).
+    generation: u64,
 }
 
 pub struct AppCore {
@@ -155,6 +158,9 @@ pub struct AppCore {
     pty: PtyManager,
     settings: RwLock<AppSettings>,
     cli: Mutex<Option<CliCache>>,
+    /// Counts CLI refreshes, so a slow one (the startup check) cannot
+    /// overwrite what a later one found (after choosing an executable).
+    cli_refreshes: AtomicU64,
     inherited_env: Vec<(String, String)>,
     system_path: Vec<String>,
     bridge: Arc<dyn UiBridge>,
@@ -211,6 +217,7 @@ impl AppCore {
             pty: PtyManager::new(Arc::new(CoreObserver { core: weak.clone() })),
             settings: RwLock::new(settings),
             cli: Mutex::new(None),
+            cli_refreshes: AtomicU64::new(0),
             inherited_env,
             system_path,
             bridge,
@@ -333,6 +340,7 @@ impl AppCore {
 
     /// Re-detects the executable and its version.
     pub fn refresh_cli(&self) -> CliStatus {
+        let generation = self.cli_refreshes.fetch_add(1, Ordering::SeqCst) + 1;
         let settings = self.settings();
         let configured = settings.claude_executable_path.as_deref();
         let searched: Vec<String> =
@@ -363,6 +371,7 @@ impl AppCore {
                             searched,
                         },
                         exe: Some(exe),
+                        generation,
                     },
                     Err(e) => CliCache {
                         status: CliStatus {
@@ -374,6 +383,7 @@ impl AppCore {
                             searched,
                         },
                         exe: None,
+                        generation,
                     },
                 }
             }
@@ -391,10 +401,16 @@ impl AppCore {
                     searched,
                 },
                 exe: None,
+                generation,
             },
         };
+        let mut slot = lock(&self.cli);
+        if let Some(newer) = slot.as_ref().filter(|c| c.generation > generation) {
+            return newer.status.clone();
+        }
         let status = cache.status.clone();
-        *lock(&self.cli) = Some(cache);
+        *slot = Some(cache);
+        drop(slot);
         self.emit(CoreEvent::Changed(ChangeScope::System));
         status
     }
@@ -968,19 +984,19 @@ impl AppCore {
 
     /// Installs (or updates) the Claude Switch extension in an editor with
     /// the editor's own `--install-extension`. Returns the editor afterwards.
-    pub fn install_editor_extension(&self, editor_id: &str) -> AppResult<EditorInfo> {
-        let editor = self.find_editor(editor_id)?;
-        let package = self
-            .extension_package()
-            .ok_or_else(|| AppError::NotFound("The editor extension package".into()))?;
+    /// Runs an editor's own command-line tool (`code --install-extension …`)
+    /// with a clean environment, waiting up to [`EXTENSION_INSTALL_WAIT`].
+    fn run_editor_cli(
+        &self,
+        editor: &EditorInfo,
+        args: &[&std::ffi::OsStr],
+    ) -> AppResult<std::process::ExitStatus> {
         let probe = self.paths.cli_probe_dir();
         crate::paths::ensure_private_dir(&probe)?;
         let exe = self.cli().ok();
         let env = self.env_for(&probe.to_string_lossy(), exe.as_ref(), false);
         let mut child = std::process::Command::new(&editor.launcher)
-            .arg("--install-extension")
-            .arg(&package)
-            .arg("--force")
+            .args(args)
             .env_clear()
             .envs(&env)
             .current_dir(&self.paths.home)
@@ -990,9 +1006,9 @@ impl AppCore {
             .spawn()
             .map_err(|e| AppError::ProcessStart(format!("could not start {}: {e}", editor.name)))?;
         let deadline = std::time::Instant::now() + EXTENSION_INSTALL_WAIT;
-        let status = loop {
+        loop {
             if let Some(status) = child.try_wait()? {
-                break status;
+                return Ok(status);
             }
             if std::time::Instant::now() > deadline {
                 let _ = child.kill();
@@ -1002,12 +1018,44 @@ impl AppCore {
                 )));
             }
             std::thread::sleep(Duration::from_millis(200));
-        };
+        }
+    }
+
+    pub fn install_editor_extension(&self, editor_id: &str) -> AppResult<EditorInfo> {
+        let editor = self.find_editor(editor_id)?;
+        let package = self
+            .extension_package()
+            .ok_or_else(|| AppError::NotFound("The editor extension package".into()))?;
+        let status = self.run_editor_cli(
+            &editor,
+            &[
+                std::ffi::OsStr::new("--install-extension"),
+                package.as_os_str(),
+                std::ffi::OsStr::new("--force"),
+            ],
+        )?;
         if !status.success() {
             return Err(AppError::ProcessStart(format!(
                 "{} could not install the extension ({status})",
                 editor.name
             )));
+        }
+        // An earlier ID of the extension registers the same commands.
+        for legacy in editors::installed_legacy(&editor.extensions_dir) {
+            let removed = self.run_editor_cli(
+                &editor,
+                &[
+                    std::ffi::OsStr::new("--uninstall-extension"),
+                    std::ffi::OsStr::new(legacy),
+                ],
+            );
+            match removed {
+                Ok(status) if status.success() => {
+                    log::info!("removed the earlier editor extension from {}", editor.id)
+                }
+                Ok(status) => log::warn!("could not remove {legacy} from {} ({status})", editor.id),
+                Err(e) => log::warn!("could not remove {legacy} from {}: {e}", editor.id),
+            }
         }
         log::info!("installed the editor extension in {}", editor.id);
         self.emit(CoreEvent::Changed(ChangeScope::System));

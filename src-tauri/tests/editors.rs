@@ -312,15 +312,28 @@ fn installs_the_claude_switch_extension_with_the_editors_own_cli() {
     let launcher = apps.join("Visual Studio Code.app/Contents/Resources/app/bin/code");
     fs::create_dir_all(launcher.parent().unwrap()).unwrap();
     let log = app.root.join("install.log");
-    // Like `code --install-extension`: records the call and installs.
+    // Like `code --install-extension` and `--uninstall-extension`: records
+    // each call and changes the extensions folder.
     fs::write(
         &launcher,
         format!(
-            "#!/bin/bash\necho \"ARGS=$*\" > '{}'\nmkdir -p \"$HOME/.vscode/extensions/claude-switch.claude-switch-vscode-0.1.0\"\n",
+            r#"#!/bin/bash
+echo "ARGS=$*" >> '{}'
+case "$1" in
+  --install-extension) mkdir -p "$HOME/.vscode/extensions/alirezahemmati.claude-switch-vscode-0.1.0" ;;
+  --uninstall-extension) rm -rf "$HOME/.vscode/extensions/$2"-* ;;
+esac
+"#,
             log.display()
         ),
     )
     .unwrap();
+    // The extension under the ID it had before its own publisher.
+    let legacy = app
+        .paths
+        .home
+        .join(".vscode/extensions/claude-switch.claude-switch-vscode-0.1.2");
+    fs::create_dir_all(&legacy).unwrap();
     fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
     app.core.set_editor_roots(vec![apps]);
 
@@ -340,8 +353,12 @@ fn installs_the_claude_switch_extension_with_the_editors_own_cli() {
     assert_eq!(editor.extension_version.as_deref(), Some("0.1.0"));
     assert_eq!(
         fs::read_to_string(&log).unwrap().trim(),
-        format!("ARGS=--install-extension {} --force", package.display())
+        format!(
+            "ARGS=--install-extension {} --force\nARGS=--uninstall-extension claude-switch.claude-switch-vscode",
+            package.display()
+        )
     );
+    assert!(!legacy.exists());
     assert_eq!(
         app.core
             .install_editor_extension("/bin/sh")

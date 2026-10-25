@@ -24,7 +24,7 @@
     "url": "https://github.com/alirezahematidev/claude-switch.git",
     "directory": "vscode-extension"
   },
-  "publisher": "claude-switch",
+  "publisher": "alirezahemmati",
   "main": "./out/extension.js",
   "contributes": {
     "commands": [

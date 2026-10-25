@@ -129,6 +129,9 @@ On its own first (the app not installed, or quit, on a Mac with no
       the app.
 - [ ] Then install and open the app: it shows the same accounts; an account
       added in one appears in the other when its window gains focus.
+- [ ] With the earlier `claude-switch.claude-switch-vscode` installed:
+      **Settings → Editors → Install** in the app removes it; installing the
+      `.vsix` by hand offers **Uninstall** for it instead.
 - [ ] Cursor or Windsurf (if installed, with Claude Code's extension): install
       and switch work there too.
 - [ ] A remote (SSH) window: the commands explain they are for local windows.

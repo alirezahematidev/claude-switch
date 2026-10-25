@@ -56,6 +56,8 @@ const CLAUDE_SECTION = "claudeCode";
 const ENV_SETTING = "environmentVariables";
 const CLAUDE_PANEL = "claudeVSCodePanel";
 const CLAUDE_EXTENSION = "anthropic.claude-code";
+/** This extension's IDs before its own Marketplace publisher. */
+const LEGACY_EXTENSIONS = ["claude-switch.claude-switch-vscode"];
 
 function settings() {
   return vscode.workspace.getConfiguration("claudeSwitch");
@@ -341,7 +343,31 @@ const COMMANDS = [
   "claudeSwitch.showLog",
 ];
 
+/**
+ * Offers to uninstall an earlier copy of this extension, which registers the
+ * same commands and buttons.
+ */
+function offerToRemoveLegacy(): void {
+  const legacy = LEGACY_EXTENSIONS.find((id) => vscode.extensions.getExtension(id));
+  if (!legacy) return;
+  void (async () => {
+    const action = await vscode.window.showWarningMessage(
+      "An older Claude Switch extension is also installed. Uninstall it?",
+      "Uninstall",
+    );
+    if (action !== "Uninstall") return;
+    await vscode.commands.executeCommand("workbench.extensions.uninstallExtension", legacy);
+    const reload = await vscode.window.showInformationMessage(
+      "Reload the window to finish.",
+      "Reload Window",
+    );
+    if (reload) await vscode.commands.executeCommand("workbench.action.reloadWindow");
+  })();
+}
+
 export function activate(context: vscode.ExtensionContext): void {
+  // Before registering commands: the earlier copy may hold the same ones.
+  offerToRemoveLegacy();
   // Profiles live on this Mac; in a remote window Claude Code runs elsewhere.
   if (vscode.env.remoteName !== undefined || process.platform !== "darwin") {
     const reason =

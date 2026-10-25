@@ -107,7 +107,12 @@ impl EditorAccount {
 }
 
 /// The Claude Switch extension's ID in editor marketplaces and folders.
-pub const EXTENSION_ID: &str = "claude-switch.claude-switch-vscode";
+pub const EXTENSION_ID: &str = "alirezahemmati.claude-switch-vscode";
+
+/// IDs the extension had before it was published under its own publisher.
+/// Installing the current one removes these, which register the same
+/// commands.
+pub const LEGACY_EXTENSION_IDS: &[&str] = &["claude-switch.claude-switch-vscode"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -178,20 +183,36 @@ pub fn detect(roots: &[PathBuf], home: &Path) -> Vec<EditorInfo> {
 }
 
 /// The installed version of the Claude Switch extension in an editor's
-/// extensions folder: from `extensions.json` (the editor's own list) when it
-/// exists, otherwise from the folder names.
+/// extensions folder.
 pub fn installed_extension(dir: &Path) -> Option<String> {
+    installed_version(dir, EXTENSION_ID)
+}
+
+/// Earlier IDs of the extension still installed in an editor's extensions
+/// folder.
+pub fn installed_legacy(dir: &Path) -> Vec<&'static str> {
+    LEGACY_EXTENSION_IDS
+        .iter()
+        .copied()
+        .filter(|id| installed_version(dir, id).is_some())
+        .collect()
+}
+
+/// The installed version of extension `id` in an extensions folder: from
+/// `extensions.json` (the editor's own list) when it exists, otherwise from
+/// the folder names.
+fn installed_version(dir: &Path, extension: &str) -> Option<String> {
     if let Ok(text) = std::fs::read_to_string(dir.join("extensions.json")) {
         let list: serde_json::Value = serde_json::from_str(&text).ok()?;
         return list.as_array()?.iter().find_map(|e| {
             let id = e.get("identifier")?.get("id")?.as_str()?;
-            if !id.eq_ignore_ascii_case(EXTENSION_ID) {
+            if !id.eq_ignore_ascii_case(extension) {
                 return None;
             }
             e.get("version")?.as_str().map(str::to_string)
         });
     }
-    let prefix = format!("{EXTENSION_ID}-");
+    let prefix = format!("{extension}-");
     std::fs::read_dir(dir)
         .ok()?
         .flatten()
@@ -323,19 +344,28 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         assert_eq!(installed_extension(dir), None);
-        fs::create_dir(dir.join("claude-switch.claude-switch-vscode-0.1.0")).unwrap();
-        fs::create_dir(dir.join("claude-switch.claude-switch-vscode-0.10.2-darwin-arm64")).unwrap();
+        fs::create_dir(dir.join("alirezahemmati.claude-switch-vscode-0.1.0")).unwrap();
+        fs::create_dir(dir.join("alirezahemmati.claude-switch-vscode-0.10.2-darwin-arm64"))
+            .unwrap();
         fs::create_dir(dir.join("anthropic.claude-code-2.1.310")).unwrap();
         assert_eq!(installed_extension(dir).as_deref(), Some("0.10.2"));
+        assert!(installed_legacy(dir).is_empty());
+        // The ID it had before its own publisher is a different extension.
+        fs::create_dir(dir.join("claude-switch.claude-switch-vscode-0.1.0")).unwrap();
+        assert_eq!(
+            installed_legacy(dir),
+            ["claude-switch.claude-switch-vscode"]
+        );
 
         // The editor's own list wins when it exists.
         fs::write(
             dir.join("extensions.json"),
             r#"[{"identifier":{"id":"anthropic.claude-code"},"version":"2.1.310"},
-                {"identifier":{"id":"Claude-Switch.claude-switch-vscode"},"version":"0.1.0"}]"#,
+                {"identifier":{"id":"AlirezaHemmati.claude-switch-vscode"},"version":"0.1.0"}]"#,
         )
         .unwrap();
         assert_eq!(installed_extension(dir).as_deref(), Some("0.1.0"));
+        assert!(installed_legacy(dir).is_empty());
         fs::write(dir.join("extensions.json"), "[]").unwrap();
         assert_eq!(installed_extension(dir), None);
     }

@@ -111,11 +111,15 @@ each); the Marketplace then does not offer it on Windows or Linux.
 
 Once:
 
-1. Create a publisher at <https://marketplace.visualstudio.com/manage> (a
-   Microsoft account). Its ID must equal `"publisher"` in
-   `vscode-extension/package.json` and the prefix of `EXTENSION_ID` in
+1. The publisher is `alirezahemmati`
+   (<https://marketplace.visualstudio.com/manage>), so the extension's ID is
+   `alirezahemmati.claude-switch-vscode`. It must match `"publisher"` in
+   `vscode-extension/package.json` and `EXTENSION_ID` in
    `src-tauri/core/src/editors.rs` (the app finds the installed extension by
-   it); change both together. `claude-switch` is taken by someone else.
+   it); change both together. Copies installed before under
+   `claude-switch.claude-switch-vscode` (`LEGACY_EXTENSION_IDS`) are removed
+   when the app installs the extension, and the extension offers to uninstall
+   them.
 2. Create an Azure DevOps personal access token with the **Marketplace →
    Manage** scope and *All accessible organizations*, then
    `npx vsce login <publisher>`.
