@@ -240,6 +240,16 @@ impl AppPaths {
         Ok(orphans)
     }
 
+    /// True if `path` has the shape of a Claude Switch profile folder
+    /// (`<profiles root>/<uuid>`), whether or not an account uses it.
+    pub fn is_profile_path(&self, path: &Path) -> bool {
+        path.parent() == Some(self.profiles_root.as_path())
+            && path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| Uuid::parse_str(n).is_ok())
+    }
+
     /// True if `path` is one of the directories this app manages, or lies
     /// inside one. Such paths may not be registered as projects.
     pub fn is_managed_path(&self, path: &Path) -> bool {

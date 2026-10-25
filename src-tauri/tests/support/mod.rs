@@ -118,6 +118,10 @@ pub struct TestApp {
     pub opened: PathBuf,
 }
 
+/// A login shell whose profile exports a tool variable, a PATH entry and an
+/// API key (which must never reach an editor launched for an account).
+pub const LOGIN_SHELL: &str = "#!/bin/bash\nexport FROM_LOGIN_SHELL=yes ANTHROPIC_API_KEY=from-profile PATH=/from/profile/bin:$PATH\nexec /bin/bash -c \"$4\"\n";
+
 pub fn inherited_env(home: &Path) -> Vec<(String, String)> {
     vec![
         ("HOME".into(), home.display().to_string()),
@@ -154,6 +158,12 @@ impl TestApp {
         fs::write(&mock, MOCK_CLAUDE).unwrap();
         fs::set_permissions(&mock, fs::Permissions::from_mode(0o755)).unwrap();
 
+        // Stands in for the user's login shell when editors are launched:
+        // exports what a shell profile might, then runs the command.
+        let login_shell = bin.join("login-shell");
+        fs::write(&login_shell, LOGIN_SHELL).unwrap();
+        fs::set_permissions(&login_shell, fs::Permissions::from_mode(0o755)).unwrap();
+
         let opened = root.join("opened.log");
         let opener = bin.join("open");
         fs::write(
@@ -168,6 +178,7 @@ impl TestApp {
         // or hand links to real applications.
         core.set_editor_roots(Vec::new());
         core.set_url_opener(opener);
+        core.set_login_shell_override(Some(login_shell));
         core.update_settings(SettingsPatch {
             claude_executable_path: Some(mock.display().to_string()),
             ..Default::default()
@@ -203,6 +214,7 @@ impl TestApp {
         let (core, bridge) = Self::open_core(&self.paths, &self.paths.home);
         core.set_editor_roots(Vec::new());
         core.set_url_opener(self.root.join("bin/open"));
+        core.set_login_shell_override(Some(self.root.join("bin/login-shell")));
         self.core = core;
         self.bridge = bridge;
         self.core.startup();

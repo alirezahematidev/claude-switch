@@ -2,10 +2,22 @@
  * The account switcher behind the title-bar button and the status bar item.
  * Editor APIs come in through `SwitcherHost` so the flow can be tested
  * without VS Code.
+ *
+ * A Claude tab keeps the account it started with until it is closed, and the
+ * Claude Code extension shows one usage meter per window, fed by every Claude
+ * tab in it. So after a switch, tabs still running with another account are
+ * closed (when continuing a conversation, whose old tab would otherwise be
+ * reused) or offered to be closed.
  */
 import * as path from "node:path";
 
-import { accountFor, formatAgo, mergeConversations, type InUse } from "./accounts";
+import {
+  accountFor,
+  formatAgo,
+  isClaudeSwitchProfile,
+  mergeConversations,
+  type InUse,
+} from "./accounts";
 import type { BridgeAccount } from "./bindings/BridgeAccount";
 import type { BridgeConversation } from "./bindings/BridgeConversation";
 import { BridgeError, type Bridge } from "./bridge";
@@ -22,6 +34,12 @@ export interface PickItem<T> {
   value?: T;
 }
 
+/**
+ * The folder a Claude tab started with: a path, `null` for Claude Code's
+ * default (`~/.claude`), or `undefined` when not known.
+ */
+export type TabAccount = string | null | undefined;
+
 export interface SwitcherHost {
   pick<T>(items: PickItem<T>[], title: string, placeholder: string): Promise<T | undefined>;
   inUse(): InUse;
@@ -29,9 +47,10 @@ export interface SwitcherHost {
   setConfigDir(dir: string | undefined): Promise<void>;
   /** Local workspace folders, where the Claude Code extension starts Claude. */
   workspaceDirs(): string[];
-  /** True if the active editor tab is a Claude Code conversation. */
-  claudeTabActive(): boolean;
-  closeActiveClaudeTab(): Promise<void>;
+  /** Claude tabs in this window that did not start with `dir`. */
+  claudeTabsNotUsing(dir: string): TabAccount[];
+  /** Closes the tabs `claudeTabsNotUsing(dir)` lists. */
+  closeClaudeTabsNotUsing(dir: string): Promise<void>;
   /** Opens the Claude Code extension's link in this window. */
   openClaude(sessionId?: string): Promise<void>;
   info(message: string, ...actions: string[]): Promise<string | undefined>;
@@ -47,17 +66,58 @@ type Choice =
   | { kind: "openApp" };
 
 type Next =
-  | { kind: "continue"; conversation: Conversation; closeTab: boolean }
+  | { kind: "continue"; conversation: Conversation }
   | { kind: "chooseConversation" }
   | { kind: "new" }
   | { kind: "switch" };
 
 const OPEN_APP = "Open Claude Switch";
+export const CLOSE_TABS = "Close Them";
 
-export function describeInUse(inUse: InUse, current: BridgeAccount | undefined): string {
+/**
+ * How the account in use reads in titles and tooltips. `accounts` is
+ * `undefined` when Claude Switch could not be asked.
+ */
+export function describeInUse(
+  inUse: InUse,
+  current: BridgeAccount | undefined,
+  accounts?: readonly BridgeAccount[],
+): string {
   if (current) return current.name;
   if (inUse.source === "default") return "Claude Code's default account";
+  if (accounts && inUse.dir && isClaudeSwitchProfile(inUse.dir)) {
+    return "an account removed from Claude Switch";
+  }
   return "a folder that is not a Claude Switch account";
+}
+
+/** One name for the account(s) a set of tabs uses, for messages. */
+export function tabsAccountName(
+  tabs: readonly TabAccount[],
+  accounts: readonly BridgeAccount[],
+): string {
+  const names = new Set(
+    tabs.map((dir) => {
+      if (dir === null) return "Claude Code's default account";
+      return dir === undefined ? undefined : accountFor(accounts, dir)?.name;
+    }),
+  );
+  const [only] = names;
+  return names.size === 1 && only !== undefined ? only : "another account";
+}
+
+function plural(count: number, one: string, many: string): string {
+  return count === 1 ? one : many;
+}
+
+/** "2 Claude tabs here still use Work…" */
+export function otherTabsMessage(count: number, name: string, target: string): string {
+  const tabs = count === 1 ? "A Claude tab" : `${count} Claude tabs`;
+  return (
+    `${tabs} in this window still ${plural(count, "uses", "use")} ${name}. ` +
+    `${plural(count, "It keeps", "They keep")} running with ${name} until closed, so /usage there ` +
+    `and this window's usage meter show ${name}'s limits, not ${target}'s.`
+  );
 }
 
 export class Switcher {
@@ -139,7 +199,7 @@ export class Switcher {
           value: { kind: "openApp" as const },
         },
       ],
-      `Claude Code account: ${describeInUse(inUse, current)}`,
+      `Claude Code account: ${describeInUse(inUse, current, accounts)}`,
       "Choose the account for Claude Code in this editor",
     );
     if (!choice) return;
@@ -149,7 +209,9 @@ export class Switcher {
     }
     if (choice.kind === "perWindow") {
       await this.host.setConfigDir(undefined);
-      await this.host.info("New Claude tabs use the account their window was opened with.");
+      await this.host.info(
+        "New Claude tabs use the account their window was opened with. Claude tabs that are already open keep theirs.",
+      );
       return;
     }
 
@@ -163,10 +225,15 @@ export class Switcher {
       return;
     }
     if (target.id === current?.id) {
-      await this.host.info(`Claude Code already uses ${target.name} here.`);
+      const others = this.host.claudeTabsNotUsing(target.configDir);
+      if (others.length === 0) {
+        await this.host.info(`Claude Code already uses ${target.name} here.`);
+        return;
+      }
+      await this.offerToClose(others, target, accounts, `Claude Code uses ${target.name} here. `);
       return;
     }
-    await this.switchTo(target);
+    await this.switchTo(target, accounts);
   }
 
   private async conversations(): Promise<Conversation[]> {
@@ -179,10 +246,27 @@ export class Switcher {
     return mergeConversations(lists);
   }
 
-  private async switchTo(target: BridgeAccount): Promise<void> {
+  /** Asks to close Claude tabs that still use another account. */
+  private async offerToClose(
+    others: readonly TabAccount[],
+    target: BridgeAccount,
+    accounts: readonly BridgeAccount[],
+    prefix = "",
+  ): Promise<void> {
+    const name = tabsAccountName(others, accounts);
+    const action = await this.host.info(
+      `${prefix}${otherTabsMessage(others.length, name, target.name)}`,
+      CLOSE_TABS,
+    );
+    if (action === CLOSE_TABS) await this.host.closeClaudeTabsNotUsing(target.configDir);
+  }
+
+  private async switchTo(target: BridgeAccount, accounts: readonly BridgeAccount[]): Promise<void> {
     const conversations = await this.conversations();
     const latest = conversations[0];
-    const closeTab = latest !== undefined && this.host.claudeTabActive();
+    const others = this.host.claudeTabsNotUsing(target.configDir);
+    const othersName = tabsAccountName(others, accounts);
+    const reopen = `the conversation with ${target.name}, with its full history, in a new tab`;
     const next = await this.host.pick<Next>(
       [
         ...(latest
@@ -190,11 +274,12 @@ export class Switcher {
               {
                 label: `Continue this conversation with ${target.name}`,
                 description: formatAgo(latest.modifiedAt),
-                detail: closeTab
-                  ? "Closes this tab and reopens the conversation, with its full history"
-                  : "Reopens the conversation, with its full history, in a new tab",
+                detail:
+                  others.length > 0
+                    ? `Closes the ${plural(others.length, "Claude tab", `${others.length} Claude tabs`)} here that ${plural(others.length, "uses", "use")} ${othersName}, then reopens ${reopen}`
+                    : `Reopens ${reopen}`,
                 icon: { codicon: "debug-continue" },
-                value: { kind: "continue" as const, conversation: latest, closeTab },
+                value: { kind: "continue" as const, conversation: latest },
               },
             ]
           : []),
@@ -221,13 +306,13 @@ export class Switcher {
         },
       ],
       `Switch to ${target.name}`,
-      "Claude tabs that are already open keep their account",
+      "Claude tabs keep the account they started with until they are closed",
     );
     if (!next) return;
 
     switch (next.kind) {
       case "continue":
-        await this.continueWith(target, next.conversation, next.closeTab);
+        await this.continueWith(target, next.conversation);
         return;
       case "chooseConversation": {
         const conversation = await this.host.pick<Conversation>(
@@ -240,25 +325,31 @@ export class Switcher {
           `Continue with ${target.name}`,
           "Choose a conversation from this workspace",
         );
-        if (conversation) await this.continueWith(target, conversation, false);
+        if (conversation) await this.continueWith(target, conversation);
         return;
       }
       case "new":
         await this.host.setConfigDir(target.configDir);
         await this.host.openClaude();
+        if (others.length > 0) await this.offerToClose(others, target, accounts);
         return;
       case "switch":
         await this.host.setConfigDir(target.configDir);
-        await this.host.info(`New Claude tabs use ${target.name}.`);
+        if (others.length > 0) {
+          await this.offerToClose(others, target, accounts, `New Claude tabs use ${target.name}. `);
+        } else {
+          await this.host.info(`New Claude tabs use ${target.name}.`);
+        }
         return;
     }
   }
 
-  private async continueWith(
-    target: BridgeAccount,
-    conversation: Conversation,
-    closeTab: boolean,
-  ): Promise<void> {
+  /**
+   * Copies the conversation to `target`, switches, closes the tabs still on
+   * other accounts (an open tab with this conversation would otherwise be
+   * focused instead, with its old account), and reopens it.
+   */
+  private async continueWith(target: BridgeAccount, conversation: Conversation): Promise<void> {
     try {
       if (conversation.accountId !== target.id) {
         await this.host.withProgress(`Copying the conversation to ${target.name}…`, () =>
@@ -275,7 +366,7 @@ export class Switcher {
       return;
     }
     await this.host.setConfigDir(target.configDir);
-    if (closeTab) await this.host.closeActiveClaudeTab();
+    await this.host.closeClaudeTabsNotUsing(target.configDir);
     await this.host.openClaude(conversation.sessionId);
   }
 }

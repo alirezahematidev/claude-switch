@@ -9,6 +9,7 @@
  * `CLAUDE_CONFIG_DIR` it was opened with (Claude Switch's "Open in VS Code"),
  * or Claude Code's default `~/.claude`.
  */
+import * as os from "node:os";
 import * as path from "node:path";
 
 import type { BridgeAccount } from "./bindings/BridgeAccount";
@@ -94,6 +95,20 @@ export function configDirInUse(
 
 export function sameDir(a: string, b: string): boolean {
   return path.resolve(a) === path.resolve(b);
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * True for a Claude Switch profile folder (`~/.claude-switch/profiles/<id>`),
+ * whether or not an account still uses it.
+ */
+export function isClaudeSwitchProfile(dir: string, home = os.homedir()): boolean {
+  const resolved = path.resolve(dir);
+  return (
+    path.dirname(resolved) === path.join(home, ".claude-switch", "profiles") &&
+    UUID.test(path.basename(resolved))
+  );
 }
 
 export function accountFor(

@@ -6,6 +6,7 @@ import {
   configDirFromSetting,
   configDirInUse,
   formatAgo,
+  isClaudeSwitchProfile,
   mergeConversations,
   withConfigDir,
 } from "../src/accounts";
@@ -116,5 +117,18 @@ describe("the Claude Code link", () => {
     expect(claudeLink("vscode", "abc", "   ")).toBe(
       "vscode://anthropic.claude-code/open?session=abc",
     );
+  });
+});
+
+describe("Claude Switch profile folders", () => {
+  it("are recognized whether or not an account still uses them", () => {
+    const home = "/Users/me";
+    const id = "0b7d4c1e-9a55-4f0e-8a51-2d3c4b5a6f70";
+    expect(isClaudeSwitchProfile(`/Users/me/.claude-switch/profiles/${id}`, home)).toBe(true);
+    expect(isClaudeSwitchProfile(`/Users/me/.claude-switch/profiles/${id}/`, home)).toBe(true);
+    expect(isClaudeSwitchProfile(`/Users/me/.claude-switch/profiles/not-an-id`, home)).toBe(false);
+    expect(isClaudeSwitchProfile(`/Users/me/.claude-switch/profiles/${id}/x`, home)).toBe(false);
+    expect(isClaudeSwitchProfile(`/Users/other/.claude-switch/profiles/${id}`, home)).toBe(false);
+    expect(isClaudeSwitchProfile("/Users/me/.claude", home)).toBe(false);
   });
 });

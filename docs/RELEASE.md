@@ -85,3 +85,20 @@ Bump `version` in `package.json`, `src-tauri/Cargo.toml` and
 `src-tauri/tauri.conf.json` together. Database changes need a new migration
 appended in `src-tauri/src/db.rs`; never edit a shipped one. Older app versions
 refuse a newer database instead of corrupting it.
+
+## Icons
+
+The SVG sources live in `assets/`; the PNG, `.icns` and `.ico` files are
+generated from them with the Tauri CLI. Generate into a temporary folder and
+copy only the files the app uses (the CLI also writes Windows Store, Android
+and iOS icons, which this project doesn't ship):
+
+```bash
+OUT=$(mktemp -d)
+pnpm tauri icon assets/app-icon.svg -o "$OUT/app"          # app, Dock, Finder, DMG
+cp "$OUT"/app/{32x32,64x64,128x128,128x128@2x}.png "$OUT"/app/icon.{icns,ico,png} src-tauri/icons/
+pnpm tauri icon assets/tray-template.svg --png 44 -o "$OUT/tray"   # menu bar (template image)
+cp "$OUT/tray/44x44.png" src-tauri/icons/tray-template.png
+pnpm tauri icon assets/extension-icon.svg --png 128 -o "$OUT/ext"  # VS Code extension
+cp "$OUT/ext/128x128.png" vscode-extension/icon.png
+```

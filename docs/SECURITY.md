@@ -37,7 +37,9 @@ environment the app was launched with.
    Code–family app bundle (`--new-window <project>`, or `<project>` for a
    handoff), and `/usr/bin/open -a <that editor's app> <link>` with a link
    built in Rust from the session UUID and a percent-encoded message, and the
-   editor launcher with `--install-extension <bundled vsix> --force`.
+   editor launcher with `--install-extension <bundled vsix> --force`, and,
+   once per run before the first editor launch, the login shell with
+   `-i -l -c <fixed command>` to read the user's environment (see below).
    A login email must look like an address and may not start with `-`; a
    handoff message may not start with `-` or contain control characters
    (≤ 2000 characters).
@@ -73,6 +75,31 @@ environment the app was launched with.
   `remove_dir_all` does not follow inner symlinks.
 - Projects are stored by canonical path. `/` and Claude Switch's own folders are
   rejected.
+
+## Editor environment
+
+An editor window gets the environment of the launcher that opened it, so
+editors are launched with the user's login-shell environment rather than the
+app's minimal one (otherwise the window's extensions would lack the user's
+`PATH`). It is read once per run: the shell validated against `/etc/shells`
+runs `-i -l -c` with a constant command (no user input), a 10 s limit, its
+own process group (killed on timeout) and `CLAUDE_SWITCH_RESOLVING_ENVIRONMENT=1`
+set. Every variable that affects Claude Code's account, provider or
+configuration folder (`ANTHROPIC_*`, `CLAUDE_*`, …) is dropped, as are the
+editor's own launcher variables; `CLAUDE_CONFIG_DIR` is then set to the
+profile. Values are kept in memory only and never logged. If the shell
+fails, editors get the session environment instead.
+
+## Profiles in use outside the app
+
+Claude Code lists its running processes in `<profile>/sessions/<pid>.json`.
+Before deleting a profile's data, Claude Switch reads only `pid` and
+`startedAt` from those files (no other files there) and refuses while one of
+them is a live process of the current user that started no later than it
+registered, so a reused process ID does not count. A process still running
+with the profile, such as a Claude tab in VS Code, would otherwise keep its
+login and write the folder back. Removing an account (with or without its
+data) also returns editors set to it to per-window accounts.
 
 ## Conversation handoff
 

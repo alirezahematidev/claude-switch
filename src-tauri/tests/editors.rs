@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use claude_switch_lib::domain::{
-    ContinueConversationInput, OpenInEditorInput, SetEditorAccountInput,
+    ContinueConversationInput, DeleteAccountInput, OpenInEditorInput, SetEditorAccountInput,
 };
 use claude_switch_lib::editors::EditorAccountMode;
 use claude_switch_lib::error::ErrorKind;
@@ -22,7 +22,7 @@ fn install_editor(root: &Path, log: &Path) -> PathBuf {
     fs::write(
         &launcher,
         format!(
-            "#!/bin/bash\n{{ echo \"ARGS=$*\"; echo \"DIR=$CLAUDE_CONFIG_DIR\"; echo \"PWD=$(pwd)\"; echo \"KEY=${{ANTHROPIC_API_KEY:-unset}}\"; }} > {}\n",
+            "#!/bin/bash\n{{ echo \"ARGS=$*\"; echo \"DIR=$CLAUDE_CONFIG_DIR\"; echo \"PWD=$(pwd)\"; echo \"FROM=${{FROM_LOGIN_SHELL:-unset}}\"; echo \"PATH=$PATH\"; echo \"KEY=${{ANTHROPIC_API_KEY:-unset}}\"; }} > {}\n",
             log.display()
         ),
     )
@@ -73,6 +73,10 @@ fn opens_a_project_with_the_selected_account() {
         out.contains("KEY=unset"),
         "API keys never reach the editor: {out}"
     );
+    // The window gets the user's shell environment, not the app's minimal
+    // one, so its extensions find the user's tools.
+    assert!(out.contains("FROM=yes"), "{out}");
+    assert!(out.contains("PATH=/from/profile/bin:"), "{out}");
 
     assert_eq!(
         app.core.settings().preferred_editor.as_deref(),
@@ -345,4 +349,90 @@ fn installs_the_claude_switch_extension_with_the_editors_own_cli() {
             .kind(),
         ErrorKind::NotFound
     );
+}
+
+#[test]
+fn removing_an_account_releases_editors_that_use_it() {
+    let app = TestApp::new();
+    let apps = app.root.join("Applications");
+    install_editor(&apps, &app.root.join("editor.log"));
+    app.core.set_editor_roots(vec![apps]);
+    fs::write(settings_file(&app), SETTINGS).unwrap();
+    let a = app.account("Work");
+    let b = app.account("Personal");
+    let use_account = |id: &str| {
+        app.core
+            .set_editor_account(SetEditorAccountInput {
+                editor_id: "vscode".into(),
+                account_id: Some(id.into()),
+            })
+            .unwrap();
+    };
+    let remove = |id: &str, name: &str, delete: bool| {
+        app.core
+            .delete_account(DeleteAccountInput {
+                id: id.into(),
+                delete_profile_data: delete,
+                sign_out_first: false,
+                confirmation: name.into(),
+            })
+            .unwrap();
+    };
+
+    // Another account's removal leaves the setting alone.
+    use_account(&b);
+    remove(&a, "Work", false);
+    let b_dir = app.profile_dir(&b).display().to_string();
+    assert_eq!(config_dir_setting(&app).as_deref(), Some(b_dir.as_str()));
+
+    // Removing the account in use returns the editor to per-window accounts,
+    // so Claude Code never recreates the deleted profile.
+    remove(&b, "Personal", true);
+    assert_eq!(config_dir_setting(&app), None);
+    let text = fs::read_to_string(settings_file(&app)).unwrap();
+    assert!(text.contains("// my font"), "{text}");
+    assert_eq!(
+        app.core.system_info("test").editors[0].claude_account.mode,
+        EditorAccountMode::Window
+    );
+}
+
+#[test]
+fn opening_replaces_a_setting_left_by_a_removed_account() {
+    let app = TestApp::new();
+    let apps = app.root.join("Applications");
+    let log = app.root.join("editor.log");
+    install_editor(&apps, &log);
+    app.core.set_editor_roots(vec![apps]);
+    let removed = app
+        .paths
+        .profiles_root
+        .join("0b7d4c1e-9a55-4f0e-8a51-2d3c4b5a6f70");
+    fs::write(
+        settings_file(&app),
+        format!(
+            "{{ \"claudeCode.environmentVariables\": [{{ \"name\": \"CLAUDE_CONFIG_DIR\", \"value\": \"{}\" }}] }}",
+            removed.display()
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        app.core.system_info("test").editors[0].claude_account.mode,
+        EditorAccountMode::Custom
+    );
+
+    let a = app.account("Work");
+    let p = app.core.add_project(&app.project_dir("site")).unwrap();
+    let result = app
+        .core
+        .open_in_editor(OpenInEditorInput {
+            project_id: p.id,
+            account_id: a.clone(),
+            editor_id: "vscode".into(),
+        })
+        .unwrap();
+    assert!(result.editor_account_changed);
+    let a_dir = app.profile_dir(&a).display().to_string();
+    assert_eq!(config_dir_setting(&app).as_deref(), Some(a_dir.as_str()));
+    read_when_ready(&log);
 }

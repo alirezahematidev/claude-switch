@@ -141,10 +141,11 @@ copy is only read.
   (`claudeCode.environmentVariables` → `CLAUDE_CONFIG_DIR`), focuses the
   project's window, and opens the conversation in a new Claude tab. This
   applies to new Claude tabs in **every** window of that editor (VS Code only
-  reads the setting from user settings); tabs already open keep their account,
-  so close the old one. A backup of `settings.json` is saved first, and
-  **Settings → Editors** shows the setting and switches it back to *Per
-  window*.
+  reads the setting from user settings); tabs already open keep their account
+  until you close them (see [Switching accounts inside
+  VS Code](#switching-accounts-inside-vs-code)). A backup of `settings.json`
+  is saved first, and **Settings → Editors** shows the setting and switches it
+  back to *Per window*.
 
 What moves and what does not:
 - Moves: the conversation history. Files Claude changed are already in your
@@ -169,9 +170,19 @@ in the editor:
   own button (and in the Claude Code sidebar); the **status bar** shows the
   account Claude Code uses there. Both open the switcher.
 - Pick an account, then **Continue this conversation** (copies the latest
-  conversation of the workspace with its full history, closes its tab and
-  reopens it with that account), **New conversation**, or **Only switch**.
+  conversation of the workspace with its full history, closes the window's
+  Claude tabs that still use another account, and reopens it with the new
+  one), **New conversation**, or **Only switch**.
 - **Per window** returns to each window using the account it was opened with.
+
+A Claude tab keeps the account it started with until it is closed: its
+replies and `/usage` count against that account. Claude Code's extension
+also shows a single usage meter per window, fed by every Claude tab in it.
+So after a switch, Claude Switch offers to close the window's tabs that still
+use the previous account, and the status bar turns yellow while any are
+open. Claude Code's own **Logout** command and plan details keep using the
+account the window was opened with; to change those as well, open the folder
+from Claude Switch with the other account.
 
 The extension talks only to Claude Switch on this Mac, through a socket that
 only your user can open (`~/.claude-switch/claude-switch.sock`); it starts the
@@ -179,6 +190,11 @@ app in the background when needed. It chooses the account through the Claude
 Code extension's documented setting, so the same rules apply as above: every
 window's new Claude tabs, open tabs unchanged. Local windows only. Details:
 [vscode-extension/README.md](vscode-extension/README.md).
+
+Removing an account in Claude Switch also returns any editor set to it to
+*Per window*. Deleting its profile data waits until no Claude Code process
+uses it any more (close its Claude tabs in VS Code first); otherwise a
+running process would keep the login and write the folder back.
 
 ## Privacy
 

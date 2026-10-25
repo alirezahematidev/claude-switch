@@ -88,6 +88,11 @@
   "extensionKind": [
     "ui"
   ],
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#1b1a4a",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },

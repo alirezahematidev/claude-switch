@@ -9,7 +9,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, RwLock, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock, Weak};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -24,11 +24,13 @@ use crate::editor_settings;
 use crate::editors::{self, EditorAccount, EditorAccountMode, EditorInfo};
 use crate::env::{self, EnvConflict};
 use crate::error::{AppError, AppResult};
+use crate::live_sessions;
 use crate::logging;
 use crate::login::{LoginParser, LoginPhase, LoginProgress};
 use crate::paths::AppPaths;
 use crate::pty::{ExitInfo, OutputSink, OutputTap, Program, PtyManager, PtyObserver, SpawnRequest};
 use crate::settings::{AppSettings, SettingsPatch};
+use crate::shell_env;
 use crate::store::{self, AuthObservation, NewAccount, NewSession, SessionUpdate};
 use crate::transcripts::{self, CopyOutcome, Transcript};
 use crate::usage_limit::UsageLimitDetector;
@@ -166,6 +168,11 @@ pub struct AppCore {
     url_opener: RwLock<PathBuf>,
     /// The packaged editor extension (`.vsix`) shipped with the app.
     extension_package: RwLock<Option<PathBuf>>,
+    /// Shell that resolves the environment editors are launched with
+    /// (tests replace the user's login shell).
+    login_shell_override: RwLock<Option<PathBuf>>,
+    /// The user's login-shell environment, resolved once on first use.
+    login_env: OnceLock<Option<BTreeMap<String, String>>>,
     this: Weak<AppCore>,
 }
 
@@ -211,6 +218,8 @@ impl AppCore {
             editor_roots: RwLock::new(editors::default_roots(&paths_home)),
             url_opener: RwLock::new(PathBuf::from("/usr/bin/open")),
             extension_package: RwLock::new(None),
+            login_shell_override: RwLock::new(None),
+            login_env: OnceLock::new(),
             this: weak.clone(),
         }))
     }
@@ -591,10 +600,26 @@ impl AppCore {
                     "Type the account name exactly to confirm deleting its profile data",
                 ));
             }
+            // A Claude Code process still using the profile (a VS Code tab,
+            // a terminal) would keep its login alive and write the folder
+            // back after it is deleted.
+            if let Ok(dir) = self.paths.verify_profile_dir(&uuid, &account.config_dir) {
+                let running = live_sessions::running_in(&dir).len();
+                if running > 0 {
+                    return Err(AppError::Conflict(format!(
+                        "Claude Code is still running with this account outside Claude Switch ({running} {}, for example a Claude tab in VS Code or a terminal). Close {}, then try again.",
+                        if running == 1 { "process" } else { "processes" },
+                        if running == 1 { "it" } else { "them" },
+                    )));
+                }
+            }
             if input.sign_out_first {
                 self.sign_out(&uuid, &account)?;
             }
         }
+        // Editors set to this account would otherwise keep starting Claude
+        // Code with a profile that no longer belongs to Claude Switch.
+        self.release_editors(&id)?;
 
         for sid in &tracked {
             let _ = self.pty.remove(sid);
@@ -621,6 +646,25 @@ impl AppCore {
         self.emit(CoreEvent::Changed(ChangeScope::Sessions));
         self.emit(CoreEvent::Changed(ChangeScope::System));
         result
+    }
+
+    /// Returns editors whose Claude Code extension is set to this account to
+    /// per-window accounts.
+    fn release_editors(&self, account_id: &str) -> AppResult<()> {
+        for editor in self.editors() {
+            let uses_account = editor.claude_account.mode == EditorAccountMode::Account
+                && editor.claude_account.account_id.as_deref() == Some(account_id);
+            if !uses_account {
+                continue;
+            }
+            self.write_editor_account(&editor, None).map_err(|e| {
+                AppError::Conflict(format!(
+                    "{} is set to use this account for Claude Code, and that setting could not be reset: {e}",
+                    editor.name
+                ))
+            })?;
+        }
+        Ok(())
     }
 
     /// Runs the official `claude auth logout` for a profile.
@@ -1017,8 +1061,7 @@ impl AppCore {
         cwd: &Path,
         link: Option<String>,
     ) -> AppResult<()> {
-        let exe = self.cli().ok();
-        let env = self.env_for(&profile.to_string_lossy(), exe.as_ref(), false);
+        let env = self.editor_env(profile);
         let mut child = std::process::Command::new(&editor.launcher)
             .args(args)
             .env_clear()
@@ -1086,6 +1129,78 @@ impl AppCore {
         Ok(())
     }
 
+    /// Replaces the user's login shell for resolving editor environments
+    /// (used by tests).
+    pub fn set_login_shell_override(&self, shell: Option<PathBuf>) {
+        *self
+            .login_shell_override
+            .write()
+            .unwrap_or_else(|p| p.into_inner()) = shell;
+    }
+
+    /// The user's login-shell environment (see [`shell_env`]), resolved once.
+    fn login_env(&self) -> Option<&BTreeMap<String, String>> {
+        self.login_env
+            .get_or_init(|| {
+                let shell = self
+                    .login_shell_override
+                    .read()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from(self.login_shell()));
+                let mut base = self.env_for(&self.paths.home.to_string_lossy(), None, false);
+                base.remove("CLAUDE_CONFIG_DIR");
+                let resolved = shell_env::resolve(&shell, &base, &self.paths.home);
+                if resolved.is_none() {
+                    log::warn!(
+                        "could not read the login shell's environment; editors get a minimal one"
+                    );
+                }
+                resolved
+            })
+            .as_ref()
+    }
+
+    /// The environment an editor is launched with for a profile: the user's
+    /// login-shell environment (without anything that affects Claude Code's
+    /// account), Claude Switch's PATH entries and custom variables, and the
+    /// profile. Falls back to the session environment if the shell could not
+    /// be read.
+    fn editor_env(&self, profile: &Path) -> BTreeMap<String, String> {
+        let exe = self.cli().ok();
+        let base = self.env_for(&profile.to_string_lossy(), exe.as_ref(), false);
+        let Some(login) = self.login_env() else {
+            return base;
+        };
+        let mut env = login.clone();
+        let mut path: Vec<&str> = login
+            .get("PATH")
+            .map(|p| p.split(':').filter(|e| !e.is_empty()).collect())
+            .unwrap_or_default();
+        for entry in base.get("PATH").map(|p| p.split(':')).into_iter().flatten() {
+            if !entry.is_empty() && !path.contains(&entry) {
+                path.push(entry);
+            }
+        }
+        let path = path.join(":");
+        for (name, value) in base {
+            if name != "PATH" && !env.contains_key(&name) {
+                env.insert(name, value);
+            }
+        }
+        for var in &self.settings().custom_env {
+            if env::validate_custom_var_name(&var.name).is_ok() {
+                env.insert(var.name.clone(), var.value.clone());
+            }
+        }
+        env.insert("PATH".into(), path);
+        env.insert(
+            "CLAUDE_CONFIG_DIR".into(),
+            profile.to_string_lossy().into_owned(),
+        );
+        env
+    }
+
     /// Records an editor launch for an account and project.
     fn record_editor_use(
         &self,
@@ -1141,6 +1256,16 @@ impl AppCore {
                 false
             }
             EditorAccountMode::Account => {
+                self.write_editor_account(&editor, Some((&account_id, &dir)))?
+            }
+            // Left behind by an account that was removed from Claude Switch.
+            EditorAccountMode::Custom
+                if editor
+                    .claude_account
+                    .detail
+                    .as_deref()
+                    .is_some_and(|d| self.paths.is_profile_path(Path::new(d))) =>
+            {
                 self.write_editor_account(&editor, Some((&account_id, &dir)))?
             }
             EditorAccountMode::Custom => {

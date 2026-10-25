@@ -639,6 +639,42 @@ fn removing_an_account_keeps_data_unless_confirmed() {
 }
 
 #[test]
+fn profile_data_in_use_outside_the_app_is_not_deleted() {
+    let app = TestApp::new();
+    let a = app.account("In VS Code");
+    let dir = app.profile_dir(&a);
+    // Claude Code's registry entry for a live process using this profile
+    // (this test process stands in for a Claude tab in VS Code).
+    let sessions = dir.join("sessions");
+    fs::create_dir_all(&sessions).unwrap();
+    let me = std::process::id();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let entry = sessions.join(format!("{me}.json"));
+    fs::write(&entry, format!(r#"{{"pid": {me}, "startedAt": {now}}}"#)).unwrap();
+    let delete = || {
+        app.core.delete_account(DeleteAccountInput {
+            id: a.clone(),
+            delete_profile_data: true,
+            sign_out_first: false,
+            confirmation: "In VS Code".into(),
+        })
+    };
+    let err = delete().unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::Conflict);
+    assert!(err.to_string().contains("outside Claude Switch"), "{err}");
+    assert!(dir.is_dir());
+    assert_eq!(app.core.list_accounts().unwrap().len(), 1);
+
+    // Once that process is gone, deleting works.
+    fs::remove_file(&entry).unwrap();
+    delete().unwrap();
+    assert!(!dir.exists());
+}
+
+#[test]
 fn removing_a_project_never_touches_its_files() {
     let app = TestApp::new();
     let dir = app.project_dir("precious");

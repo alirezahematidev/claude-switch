@@ -506,6 +506,10 @@ function EditorExtensionRow({
   );
 }
 
+/** A Claude Switch profile folder (`…/.claude-switch/profiles/<uuid>`). */
+const REMOVED_PROFILE =
+  /\/\.claude-switch\/profiles\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/?$/i;
+
 /** Which account an editor's Claude Code extension uses. */
 function EditorAccountRow({ editor }: { editor: EditorInfo }) {
   const { data: accounts = [] } = useAccounts();
@@ -517,14 +521,17 @@ function EditorAccountRow({ editor }: { editor: EditorInfo }) {
   const value =
     mode === "account" ? (accountId ?? PER_WINDOW) : mode === "custom" ? CUSTOM : PER_WINDOW;
 
+  const removedAccount = mode === "custom" && REMOVED_PROFILE.test(detail ?? "");
   const description =
     mode === "account"
       ? `New Claude tabs in every ${editor.name} window use ${current?.name ?? "this account"}.`
-      : mode === "custom"
-        ? `Your ${editor.name} settings point Claude Code at ${detail ?? "another folder"}.`
-        : mode === "unreadable"
-          ? `${editor.name}'s settings.json could not be read. ${detail ?? ""}`
-          : "Claude Code uses the account each window was opened with.";
+      : removedAccount
+        ? `${editor.name} still starts Claude Code with the profile of an account that was removed from Claude Switch. Choose an account, or Per window.`
+        : mode === "custom"
+          ? `Your ${editor.name} settings point Claude Code at ${detail ?? "another folder"}.`
+          : mode === "unreadable"
+            ? `${editor.name}'s settings.json could not be read. ${detail ?? ""}`
+            : "Claude Code uses the account each window was opened with.";
 
   const change = async (next: string) => {
     if (next === value || next === CUSTOM) return;
@@ -557,7 +564,13 @@ function EditorAccountRow({ editor }: { editor: EditorInfo }) {
           options={[
             { value: PER_WINDOW, label: "Per window" },
             ...(mode === "custom"
-              ? [{ value: CUSTOM, label: "Custom folder", disabled: true }]
+              ? [
+                  {
+                    value: CUSTOM,
+                    label: removedAccount ? "Removed account" : "Custom folder",
+                    disabled: true,
+                  },
+                ]
               : []),
             ...accounts.map((a) => ({
               value: a.id,

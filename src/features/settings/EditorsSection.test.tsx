@@ -75,6 +75,34 @@ describe("EditorsSection", () => {
     });
   });
 
+  it("explains a setting left behind by a removed account", async () => {
+    mockCommand("list_accounts", [work]);
+    mockCommand(
+      "get_system_info",
+      makeSystemInfo({
+        editors: [
+          makeEditor({
+            claudeAccount: {
+              mode: "custom",
+              accountId: null,
+              detail: "/Users/me/.claude-switch/profiles/0b7d4c1e-9a55-4f0e-8a51-2d3c4b5a6f70",
+            },
+          }),
+        ],
+      }),
+    );
+    renderWithProviders(<EditorsSection />);
+
+    expect(
+      await screen.findByText(
+        "VS Code still starts Claude Code with the profile of an account that was removed from Claude Switch. Choose an account, or Per window.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "VS Code: Claude Code account" }),
+    ).toHaveTextContent("Removed account");
+  });
+
   it("installs or updates the Claude Switch extension", async () => {
     mockCommand("list_accounts", [work]);
     mockCommand(

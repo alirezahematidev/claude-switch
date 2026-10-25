@@ -17,20 +17,39 @@ when needed.
 Choose an account, then:
 
 - **Continue this conversation** copies the latest conversation of this
-  workspace, with its full history, to that account, closes its tab, and
-  reopens it in a new tab with "Continue where you left off." in the message
-  box. Press Return to send it.
+  workspace, with its full history, to that account, closes the Claude tabs in
+  this window that still use another account, and reopens the conversation in
+  a new tab with "Continue where you left off." in the message box. Press
+  Return to send it.
 - **Continue another conversation…** does the same for an older one.
 - **New conversation** opens a new Claude tab with that account.
 - **Only switch**: Claude tabs you open from now on use that account.
+
+After **New conversation** or **Only switch**, Claude Switch offers to close
+the Claude tabs in this window that still use the previous account. The
+status bar turns yellow while such tabs are open.
 
 ## What changes
 
 The account is set through the Claude Code extension's own setting,
 `claudeCode.environmentVariables` (`CLAUDE_CONFIG_DIR`), which VS Code keeps
-in your user settings. So it applies to new Claude tabs in **every** window;
-tabs that are already open keep their account. Choose **Per window** to go
-back to each window using the account it was opened with.
+in your user settings. So it applies to new Claude tabs in **every** window.
+Choose **Per window** to go back to each window using the account it was
+opened with.
+
+What keeps the previous account:
+
+- **Claude tabs that are already open.** Each runs its own Claude Code
+  process, started with the account in use when the tab opened. Its replies,
+  and `/usage` typed there, use that account until the tab is closed.
+- **The usage meter.** Claude Code's extension shows one usage meter per
+  window, fed by every Claude tab in it, so it mixes accounts while old tabs
+  are open. Close them (Claude Switch offers to) and the meter follows the
+  new account.
+- **Claude Code's own account actions.** Its **Logout** command and plan
+  details use the account the window was opened with (Claude Code reads it
+  once per window). To have those use another account too, open the folder
+  from Claude Switch with that account.
 
 Conversations are copied by Claude Switch from one account's profile to the
 other's; the original stays as it is. Each account keeps its own settings,
