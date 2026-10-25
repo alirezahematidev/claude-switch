@@ -5,6 +5,7 @@
 //! `AppCore` does not depend on Tauri; UI side effects go through
 //! [`UiBridge`] so the whole core can be driven from tests.
 
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1216,7 +1217,7 @@ impl AppCore {
             }
         }
         let mut list: Vec<_> = newest.into_values().collect();
-        list.sort_by(|a, b| b.1.modified.cmp(&a.1.modified));
+        list.sort_by_key(|(_, t)| Reverse(t.modified));
         list
     }
 
@@ -1242,7 +1243,7 @@ impl AppCore {
                 ));
             }
         }
-        list.sort_by(|a, b| b.0.cmp(&a.0));
+        list.sort_by_key(|(modified, _)| Reverse(*modified));
         Ok(list
             .into_iter()
             .take(CONVERSATIONS_LISTED)

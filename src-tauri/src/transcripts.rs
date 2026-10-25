@@ -18,6 +18,7 @@
 //! never parsed. A transcript is compared with an existing copy only to avoid
 //! replacing one that has diverged.
 
+use std::cmp::Reverse;
 use std::fs::{self, File};
 use std::io::{self, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
@@ -131,7 +132,7 @@ pub fn list(config_dir: &Path, cwd: &Path) -> Vec<Transcript> {
             })
         })
         .collect();
-    found.sort_by(|a, b| b.modified.cmp(&a.modified));
+    found.sort_by_key(|t| Reverse(t.modified));
     found
 }
 
