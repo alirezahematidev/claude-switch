@@ -1,6 +1,6 @@
 [package]
 name = "claude-switch"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local-first macOS manager for multiple Claude Code accounts"
 authors = ["Claude Switch contributors"]
 license = "MIT"
