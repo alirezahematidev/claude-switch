@@ -109,6 +109,12 @@ organizations or plans. Record the Claude Code version (`claude --version`).
       this conversation**: the tab closes, a new one opens with the history and
       "Continue where you left off." in the box; sending it answers as B
       (`/status`). `settings.json` has one `CLAUDE_CONFIG_DIR` entry.
+- [ ] With `claudeCode.preferredLocation` set to `sidebar`, chat in the Claude
+      sidebar as A, then click the button → B → **Continue this
+      conversation**: its detail says the window reloads; after the reload the
+      sidebar shows the same conversation and answers as B (`/status`,
+      `/usage`). With **Only switch** instead, the status bar turns yellow and
+      the message offers **Reload Window**, with the same result.
 - [ ] **New conversation** and **Only switch** behave as described; **Per
       window** removes the entry.
 - [ ] Choosing a signed-out account offers **Open Claude Switch**, which opens

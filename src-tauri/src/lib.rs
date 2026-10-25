@@ -205,6 +205,7 @@ mod export_bindings {
         crate::editor_bridge::BridgeStatus::export_all(&cfg).unwrap();
         crate::editor_bridge::BridgeAccount::export_all(&cfg).unwrap();
         crate::editor_bridge::BridgeConversation::export_all(&cfg).unwrap();
+        crate::editor_bridge::BridgeOpenConversation::export_all(&cfg).unwrap();
         crate::editor_bridge::BridgeHandOver::export_all(&cfg).unwrap();
     }
 }

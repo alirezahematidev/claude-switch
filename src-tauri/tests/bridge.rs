@@ -127,6 +127,44 @@ fn lists_accounts_and_hands_a_conversation_over() {
 }
 
 #[test]
+fn lists_the_conversations_a_process_started() {
+    let app = TestApp::new();
+    let a = app.signed_in_account("Work");
+    let project = app.project_dir("site");
+    // This test stands in for a Claude Code process its parent started.
+    let me = std::process::id();
+    let parent = std::os::unix::process::parent_id();
+    let sessions = app.profile_dir(&a).join("sessions");
+    fs::create_dir_all(&sessions).unwrap();
+    fs::write(
+        sessions.join(format!("{me}.json")),
+        json!({ "pid": me, "sessionId": CONVERSATION, "cwd": project, "kind": "interactive" })
+            .to_string(),
+    )
+    .unwrap();
+    let sockets = socket_dir();
+    let (bridge, _) = start(&app, sockets.path());
+
+    let open = method(bridge.path(), "open", json!({ "parentPid": parent }));
+    assert_eq!(
+        open["result"],
+        json!([{ "sessionId": CONVERSATION, "accountId": a, "directory": project }]),
+        "{open}"
+    );
+    let other = method(bridge.path(), "open", json!({ "parentPid": me }));
+    assert_eq!(other["result"], json!([]));
+    assert_eq!(
+        error_kind(&method(bridge.path(), "open", json!({ "parentPid": 1 }))),
+        "invalidInput"
+    );
+    assert_eq!(
+        error_kind(&method(bridge.path(), "open", json!({}))),
+        "invalidInput"
+    );
+    bridge.close();
+}
+
+#[test]
 fn refuses_anything_else() {
     let app = TestApp::new();
     let a = app.signed_in_account("Work");

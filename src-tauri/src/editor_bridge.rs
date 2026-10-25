@@ -1,6 +1,7 @@
 //! Local socket for the Claude Switch editor extension.
 //!
-//! The VS Code–family extension uses it to list accounts and to hand a
+//! The VS Code–family extension uses it to list accounts, to find the
+//! conversations its window's Claude Code processes have open, and to hand a
 //! conversation to another account; the extension then chooses the account
 //! in the editor's settings and reopens the conversation itself.
 //!
@@ -80,6 +81,18 @@ pub struct BridgeConversation {
     pub size_bytes: u64,
 }
 
+/// A conversation open in a Claude Code process an editor window started.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../vscode-extension/src/bindings/")]
+pub struct BridgeOpenConversation {
+    pub session_id: String,
+    /// The account the process runs with; `null` for `~/.claude`.
+    pub account_id: Option<String>,
+    /// The folder Claude Code runs in.
+    pub directory: String,
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../vscode-extension/src/bindings/")]
@@ -92,6 +105,13 @@ pub struct BridgeHandOver {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DirectoryParams {
     directory: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OpenParams {
+    /// The editor window's extension host.
+    parent_pid: u32,
 }
 
 #[derive(Deserialize)]
@@ -291,6 +311,22 @@ fn dispatch(
                     account_id,
                     modified_at: clock::format(t.modified),
                     size_bytes: t.size,
+                })
+                .collect();
+            serde_json::to_value(list)
+        }
+        "open" => {
+            let p: OpenParams = params(params_value)?;
+            if p.parent_pid <= 1 {
+                return Err(AppError::invalid("Invalid parameters: parentPid"));
+            }
+            let list: Vec<BridgeOpenConversation> = core
+                .conversations_opened_by(p.parent_pid)?
+                .into_iter()
+                .map(|(account_id, c)| BridgeOpenConversation {
+                    session_id: c.session_id.hyphenated().to_string(),
+                    account_id,
+                    directory: c.cwd.to_string_lossy().into_owned(),
                 })
                 .collect();
             serde_json::to_value(list)

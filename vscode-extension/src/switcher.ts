@@ -8,6 +8,12 @@
  * tab in it. So after a switch, tabs still running with another account are
  * closed (when continuing a conversation, whose old tab would otherwise be
  * reused) or offered to be closed.
+ *
+ * Claude's sidebar works the same way, but it cannot be closed, and the
+ * Claude Code extension shows the new account's email there while its
+ * conversation keeps running with the old one. Only a window reload restarts
+ * it, so its conversation is copied to the new account first and reopens
+ * there with its full history.
  */
 import * as path from "node:path";
 
@@ -20,6 +26,7 @@ import {
 } from "./accounts";
 import type { BridgeAccount } from "./bindings/BridgeAccount";
 import type { BridgeConversation } from "./bindings/BridgeConversation";
+import type { BridgeOpenConversation } from "./bindings/BridgeOpenConversation";
 import { BridgeError, type Bridge } from "./bridge";
 
 type Conversation = BridgeConversation & { directory: string };
@@ -53,6 +60,8 @@ export interface SwitcherHost {
   closeClaudeTabsNotUsing(dir: string): Promise<void>;
   /** Opens the Claude Code extension's link in this window. */
   openClaude(sessionId?: string): Promise<void>;
+  /** Reloads this window, which restarts every Claude tab and the sidebar. */
+  reloadWindow(): Promise<void>;
   info(message: string, ...actions: string[]): Promise<string | undefined>;
   error(message: string, ...actions: string[]): Promise<string | undefined>;
   withProgress<T>(title: string, task: () => Promise<T>): Promise<T>;
@@ -73,6 +82,54 @@ type Next =
 
 const OPEN_APP = "Open Claude Switch";
 export const CLOSE_TABS = "Close Them";
+export const RELOAD = "Reload Window";
+/** How long closed tabs' processes get to exit. */
+const SETTLE_MS = 3000;
+const SETTLE_STEP_MS = 200;
+
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/**
+ * Conversations open in this window's Claude tabs and sidebar. The Claude
+ * Code extension starts their processes from the window's extension host,
+ * which runs this extension too. Empty when Claude Switch cannot tell (for
+ * example, an older version).
+ */
+export function openInWindow(bridge: Bridge): Promise<BridgeOpenConversation[]> {
+  return bridge.openConversations(process.pid).catch(() => []);
+}
+
+/**
+ * The open conversations that run with another account than `accountId`
+ * (`null` for Claude Code's default; `undefined` matches none).
+ */
+export function openNotUsing(
+  open: readonly BridgeOpenConversation[],
+  accountId: string | null | undefined,
+): BridgeOpenConversation[] {
+  return open.filter((c) => c.accountId !== accountId);
+}
+
+/** The folders open conversations run with, as `tabsAccountName` takes them. */
+export function openAccounts(
+  open: readonly BridgeOpenConversation[],
+  accounts: readonly BridgeAccount[],
+): TabAccount[] {
+  return open.map((c) =>
+    c.accountId === null ? null : accounts.find((a) => a.id === c.accountId)?.configDir,
+  );
+}
+
+/**
+ * True when some of `open` (the conversations on another account) is not in
+ * one of the `tabs` that could be closed: it is in Claude's sidebar.
+ */
+export function inSidebar(open: readonly unknown[], tabs: readonly unknown[]): boolean {
+  return open.length > tabs.length;
+}
 
 /**
  * How the account in use reads in titles and tooltips. `accounts` is
@@ -120,10 +177,26 @@ export function otherTabsMessage(count: number, name: string, target: string): s
   );
 }
 
+/** "The Claude sidebar and a Claude tab here still use Work…" */
+export function sidebarMessage(tabs: number, name: string, target: string): string {
+  const where =
+    tabs === 0
+      ? "The Claude sidebar"
+      : `The Claude sidebar and ${tabs === 1 ? "a Claude tab" : `${tabs} Claude tabs`}`;
+  const count = tabs + 1;
+  return (
+    `${where} in this window still ${plural(count, "uses", "use")} ${name}, even where it shows ${target}'s email. ` +
+    `${plural(count, "It keeps", "They keep")} running with ${name}, so /usage there and this window's ` +
+    `usage meter show ${name}'s limits. Reloading the window restarts ${plural(count, "it", "them")} with ${target}, ` +
+    `with ${plural(count, "its", "their")} full history.`
+  );
+}
+
 export class Switcher {
   constructor(
     private readonly bridge: Bridge,
     private readonly host: SwitcherHost,
+    private readonly sleep: (ms: number) => Promise<void> = delay,
   ) {}
 
   /** Shows a Claude Switch error, offering to open the app where it helps. */
@@ -226,11 +299,11 @@ export class Switcher {
     }
     if (target.id === current?.id) {
       const others = this.host.claudeTabsNotUsing(target.configDir);
-      if (others.length === 0) {
+      const open = openNotUsing(await openInWindow(this.bridge), target.id);
+      const prefix = `Claude Code uses ${target.name} here. `;
+      if (!(await this.offerToMove(others, open, target, accounts, prefix))) {
         await this.host.info(`Claude Code already uses ${target.name} here.`);
-        return;
       }
-      await this.offerToClose(others, target, accounts, `Claude Code uses ${target.name} here. `);
       return;
     }
     await this.switchTo(target, accounts);
@@ -246,19 +319,91 @@ export class Switcher {
     return mergeConversations(lists);
   }
 
-  /** Asks to close Claude tabs that still use another account. */
-  private async offerToClose(
+  /**
+   * Asks to close Claude tabs that still use another account, or to reload
+   * the window when Claude's sidebar does too. False when nothing does.
+   */
+  private async offerToMove(
     others: readonly TabAccount[],
+    open: readonly BridgeOpenConversation[],
     target: BridgeAccount,
     accounts: readonly BridgeAccount[],
     prefix = "",
-  ): Promise<void> {
+  ): Promise<boolean> {
+    if (inSidebar(open, others)) {
+      const name = tabsAccountName(openAccounts(open, accounts), accounts);
+      const action = await this.host.info(
+        `${prefix}${sidebarMessage(others.length, name, target.name)}`,
+        RELOAD,
+      );
+      if (action === RELOAD) await this.reloadWith(target, open);
+      return true;
+    }
+    if (others.length === 0) return false;
     const name = tabsAccountName(others, accounts);
     const action = await this.host.info(
       `${prefix}${otherTabsMessage(others.length, name, target.name)}`,
       CLOSE_TABS,
     );
     if (action === CLOSE_TABS) await this.host.closeClaudeTabsNotUsing(target.configDir);
+    return true;
+  }
+
+  /**
+   * Copies conversations to `target` so it can resume them. One nothing was
+   * written to yet has nothing to copy.
+   */
+  private async copyTo(
+    target: BridgeAccount,
+    conversations: readonly BridgeOpenConversation[],
+  ): Promise<void> {
+    const seen = new Set<string>();
+    for (const c of conversations) {
+      if (c.accountId === target.id || seen.has(c.sessionId)) continue;
+      seen.add(c.sessionId);
+      try {
+        await this.bridge.handOver(c.directory, c.sessionId, c.accountId, target.id);
+      } catch (err) {
+        if (!(err instanceof BridgeError && err.kind === "notFound")) throw err;
+      }
+    }
+  }
+
+  /**
+   * Copies the open conversations to `target`, which the setting already
+   * names, then reloads the window: its Claude tabs and sidebar restart with
+   * `target` and reopen their conversations.
+   */
+  private async reloadWith(
+    target: BridgeAccount,
+    open: readonly BridgeOpenConversation[],
+  ): Promise<void> {
+    try {
+      await this.host.withProgress(`Copying open conversations to ${target.name}…`, () =>
+        this.copyTo(target, open),
+      );
+    } catch (err) {
+      await this.fail(err, target.id);
+      return;
+    }
+    await this.host.reloadWindow();
+  }
+
+  /**
+   * The conversations still open here with another account than `target`,
+   * once the processes of the `closed` tabs had time to exit.
+   */
+  private async leftOpen(
+    target: BridgeAccount,
+    before: readonly BridgeOpenConversation[],
+    closed: number,
+  ): Promise<BridgeOpenConversation[]> {
+    const expected = Math.max(0, before.length - closed);
+    for (let waited = 0; ; waited += SETTLE_STEP_MS) {
+      const left = openNotUsing(await openInWindow(this.bridge), target.id);
+      if (left.length <= expected || waited >= SETTLE_MS) return left;
+      await this.sleep(SETTLE_STEP_MS);
+    }
   }
 
   private async switchTo(target: BridgeAccount, accounts: readonly BridgeAccount[]): Promise<void> {
@@ -266,7 +411,16 @@ export class Switcher {
     const latest = conversations[0];
     const others = this.host.claudeTabsNotUsing(target.configDir);
     const othersName = tabsAccountName(others, accounts);
+    const open = openNotUsing(await openInWindow(this.bridge), target.id);
     const reopen = `the conversation with ${target.name}, with its full history, in a new tab`;
+    const continueDetail = (c: Conversation) => {
+      if (inSidebar(open, others) && open.some((o) => o.sessionId === c.sessionId)) {
+        return `Reloads this window, so the conversation continues in place with ${target.name}, with its full history`;
+      }
+      return others.length > 0
+        ? `Closes the ${plural(others.length, "Claude tab", `${others.length} Claude tabs`)} here that ${plural(others.length, "uses", "use")} ${othersName}, then reopens ${reopen}`
+        : `Reopens ${reopen}`;
+    };
     const next = await this.host.pick<Next>(
       [
         ...(latest
@@ -274,10 +428,7 @@ export class Switcher {
               {
                 label: `Continue this conversation with ${target.name}`,
                 description: formatAgo(latest.modifiedAt),
-                detail:
-                  others.length > 0
-                    ? `Closes the ${plural(others.length, "Claude tab", `${others.length} Claude tabs`)} here that ${plural(others.length, "uses", "use")} ${othersName}, then reopens ${reopen}`
-                    : `Reopens ${reopen}`,
+                detail: continueDetail(latest),
                 icon: { codicon: "debug-continue" },
                 value: { kind: "continue" as const, conversation: latest },
               },
@@ -312,7 +463,7 @@ export class Switcher {
 
     switch (next.kind) {
       case "continue":
-        await this.continueWith(target, next.conversation);
+        await this.continueWith(target, next.conversation, accounts, others, open);
         return;
       case "chooseConversation": {
         const conversation = await this.host.pick<Conversation>(
@@ -325,49 +476,85 @@ export class Switcher {
           `Continue with ${target.name}`,
           "Choose a conversation from this workspace",
         );
-        if (conversation) await this.continueWith(target, conversation);
+        if (conversation) await this.continueWith(target, conversation, accounts, others, open);
         return;
       }
       case "new":
         await this.host.setConfigDir(target.configDir);
         await this.host.openClaude();
-        if (others.length > 0) await this.offerToClose(others, target, accounts);
+        await this.offerToMove(others, open, target, accounts);
         return;
-      case "switch":
+      case "switch": {
         await this.host.setConfigDir(target.configDir);
-        if (others.length > 0) {
-          await this.offerToClose(others, target, accounts, `New Claude tabs use ${target.name}. `);
-        } else {
+        const prefix = `New Claude tabs use ${target.name}. `;
+        if (!(await this.offerToMove(others, open, target, accounts, prefix))) {
           await this.host.info(`New Claude tabs use ${target.name}.`);
         }
         return;
+      }
     }
   }
 
   /**
-   * Copies the conversation to `target`, switches, closes the tabs still on
-   * other accounts (an open tab with this conversation would otherwise be
-   * focused instead, with its old account), and reopens it.
+   * Copies the conversation to `target` and switches. When it is open in
+   * Claude's sidebar with another account, the window reloads so it
+   * continues in place. Otherwise the tabs still on other accounts close (an
+   * open tab with this conversation would otherwise be focused instead, with
+   * its old account), and it reopens in a new tab.
    */
-  private async continueWith(target: BridgeAccount, conversation: Conversation): Promise<void> {
+  private async continueWith(
+    target: BridgeAccount,
+    conversation: Conversation,
+    accounts: readonly BridgeAccount[],
+    others: readonly TabAccount[],
+    open: readonly BridgeOpenConversation[],
+  ): Promise<void> {
+    const inPlace =
+      inSidebar(open, others) && open.some((c) => c.sessionId === conversation.sessionId);
     try {
-      if (conversation.accountId !== target.id) {
-        await this.host.withProgress(`Copying the conversation to ${target.name}…`, () =>
-          this.bridge.handOver(
-            conversation.directory,
-            conversation.sessionId,
-            conversation.accountId,
-            target.id,
-          ),
-        );
+      if (conversation.accountId !== target.id || inPlace) {
+        await this.host.withProgress(`Copying the conversation to ${target.name}…`, async () => {
+          if (conversation.accountId !== target.id) {
+            await this.bridge.handOver(
+              conversation.directory,
+              conversation.sessionId,
+              conversation.accountId,
+              target.id,
+            );
+          }
+          // Everything open here restarts with the reload.
+          if (inPlace) {
+            await this.copyTo(
+              target,
+              open.filter((c) => c.sessionId !== conversation.sessionId),
+            );
+          }
+        });
       }
     } catch (err) {
       await this.fail(err, target.id);
       return;
     }
     await this.host.setConfigDir(target.configDir);
+    if (inPlace) {
+      await this.host.reloadWindow();
+      return;
+    }
     await this.host.closeClaudeTabsNotUsing(target.configDir);
-    await this.host.openClaude(conversation.sessionId);
+    // What still runs with another account is not in a tab.
+    const left = await this.leftOpen(target, open, others.length);
+    const leftHere = left.some((c) => c.sessionId === conversation.sessionId);
+    // The link would only show the sidebar, still on the old account.
+    if (!leftHere) await this.host.openClaude(conversation.sessionId);
+    if (left.length === 0) return;
+    const name = tabsAccountName(openAccounts(left, accounts), accounts);
+    const action = await this.host.info(
+      leftHere
+        ? `This conversation is open in the Claude sidebar, which keeps running it with ${name}. Reload the window to continue it with ${target.name}, with its full history.`
+        : sidebarMessage(0, name, target.name),
+      RELOAD,
+    );
+    if (action === RELOAD) await this.reloadWith(target, left);
   }
 }
 

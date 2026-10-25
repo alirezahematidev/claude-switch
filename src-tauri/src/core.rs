@@ -24,7 +24,7 @@ use crate::editor_settings;
 use crate::editors::{self, EditorAccount, EditorAccountMode, EditorInfo};
 use crate::env::{self, EnvConflict};
 use crate::error::{AppError, AppResult};
-use crate::live_sessions;
+use crate::live_sessions::{self, OpenConversation};
 use crate::logging;
 use crate::login::{LoginParser, LoginPhase, LoginProgress};
 use crate::paths::AppPaths;
@@ -1404,6 +1404,24 @@ impl AppCore {
         let mut list = Self::conversations_for(&sources, dir);
         list.truncate(CONVERSATIONS_LISTED);
         Ok(list)
+    }
+
+    /// Conversations open in Claude Code processes started by process
+    /// `parent` (an editor window's extension host), with the account each
+    /// runs with (`None` for `~/.claude`).
+    pub fn conversations_opened_by(
+        &self,
+        parent: u32,
+    ) -> AppResult<Vec<(Option<String>, OpenConversation)>> {
+        Ok(self
+            .conversation_sources()?
+            .into_iter()
+            .flat_map(|(account_id, dir)| {
+                live_sessions::opened_by(&dir, parent)
+                    .into_iter()
+                    .map(move |c| (account_id.clone(), c))
+            })
+            .collect())
     }
 
     /// Copies a conversation of `cwd` into a signed-in account's profile so

@@ -9,7 +9,7 @@
 | Project folders | Modified or deleted | Never written; removing a project only deletes the database row |
 | Conversations | Copied to the wrong place, overwritten, leaked | Copied only on request between verified profiles; never parsed, logged or stored; a diverged copy is never replaced |
 | Editor user settings | Corrupted or silently changed | One entry, on request; JSONC edited in place, backup first, atomic replace, re-read check |
-| Extension socket | Used by another user or to run arbitrary actions | 0600 socket in the 0700 managed folder, peer uid must match, five fixed methods, input limits; no method runs a program |
+| Extension socket | Used by another user or to run arbitrary actions | 0600 socket in the 0700 managed folder, peer uid must match, six fixed methods, input limits; no method runs a program |
 | The user's machine | Arbitrary command execution from the UI | No generic exec or file APIs; fixed argv; capability allowlist |
 | Logs and diagnostics | Leaking secrets or personal data | Nothing sensitive is logged; mandatory redaction as a second layer |
 
@@ -46,7 +46,7 @@ environment the app was launched with.
 4. **Editor extension → Rust.** The socket (`editor_bridge.rs`) accepts
    only the current user (file mode and `getpeereid`), one request of at most
    64 KB per connection, and only `status`, `accounts`, `conversations`,
-   `continue` and `show`. Unknown parameters are rejected. A directory must be
+   `open`, `continue` and `show`. Unknown parameters are rejected. A directory must be
    absolute, existing and outside Claude Switch's folders; it is canonicalized
    and only selects which conversation folder to read. `continue` is the same
    copy as the in-app handoff (signed-in target, verified profiles, prefix
@@ -93,8 +93,10 @@ fails, editors get the session environment instead.
 ## Profiles in use outside the app
 
 Claude Code lists its running processes in `<profile>/sessions/<pid>.json`.
-Before deleting a profile's data, Claude Switch reads only `pid` and
-`startedAt` from those files (no other files there) and refuses while one of
+Claude Switch reads only `pid`, `startedAt`, `sessionId` and `cwd` from those
+files (no other files there). For the editor extension's `open`, it lists the
+conversation and folder of live processes whose parent is the given process.
+Before deleting a profile's data, it refuses while one of
 them is a live process of the current user that started no later than it
 registered, so a reused process ID does not count. A process still running
 with the profile, such as a Claude tab in VS Code, would otherwise keep its

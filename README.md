@@ -172,7 +172,8 @@ in the editor:
 - Pick an account, then **Continue this conversation** (copies the latest
   conversation of the workspace with its full history, closes the window's
   Claude tabs that still use another account, and reopens it with the new
-  one), **New conversation**, or **Only switch**.
+  one; in the Claude sidebar, it reloads the window instead), **New
+  conversation**, or **Only switch**.
 - **Per window** returns to each window using the account it was opened with.
 
 A Claude tab keeps the account it started with until it is closed: its
@@ -180,7 +181,9 @@ replies and `/usage` count against that account. Claude Code's extension
 also shows a single usage meter per window, fed by every Claude tab in it.
 So after a switch, Claude Switch offers to close the window's tabs that still
 use the previous account, and the status bar turns yellow while any are
-open. Claude Code's own **Logout** command and plan details keep using the
+open. The Claude sidebar keeps its account the same way (while showing the
+new account's email) and cannot be closed, so Claude Switch copies its
+conversation and offers to reload the window instead. Claude Code's own **Logout** command and plan details keep using the
 account the window was opened with; to change those as well, open the folder
 from Claude Switch with the other account.
 

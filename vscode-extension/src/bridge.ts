@@ -12,6 +12,7 @@ import { isRecord } from "./accounts";
 import type { BridgeAccount } from "./bindings/BridgeAccount";
 import type { BridgeConversation } from "./bindings/BridgeConversation";
 import type { BridgeHandOver } from "./bindings/BridgeHandOver";
+import type { BridgeOpenConversation } from "./bindings/BridgeOpenConversation";
 import type { BridgeStatus } from "./bindings/BridgeStatus";
 
 /** The protocol version this extension speaks. */
@@ -183,6 +184,14 @@ export class Bridge {
 
   conversations(directory: string): Promise<BridgeConversation[]> {
     return this.call("conversations", { directory });
+  }
+
+  /**
+   * Conversations open in the Claude Code processes `parentPid` started,
+   * with the account each runs with.
+   */
+  openConversations(parentPid: number): Promise<BridgeOpenConversation[]> {
+    return this.call("open", { parentPid });
   }
 
   handOver(

@@ -9,10 +9,10 @@
  * through its documented `…://anthropic.claude-code/open` link.
  *
  * That setting reaches the Claude Code processes the extension starts (one
- * per Claude tab). The extension's own account features (its Logout
- * command, plan details) keep using the `CLAUDE_CONFIG_DIR` the window was
- * opened with, which it reads once; nothing can change that for a running
- * window.
+ * per Claude tab, and one for its sidebar) when they start. The extension's
+ * own account features (its Logout command, plan details) keep using the
+ * `CLAUDE_CONFIG_DIR` the window was opened with, which it reads once;
+ * nothing can change that for a running window.
  */
 import * as vscode from "vscode";
 
@@ -27,10 +27,16 @@ import {
   type InUse,
 } from "./accounts";
 import type { BridgeAccount } from "./bindings/BridgeAccount";
+import type { BridgeOpenConversation } from "./bindings/BridgeOpenConversation";
 import { Bridge, BridgeError, defaultSocketPath } from "./bridge";
 import {
   describeInUse,
+  inSidebar,
+  openAccounts,
+  openInWindow,
+  openNotUsing,
   otherTabsMessage,
+  sidebarMessage,
   Switcher,
   tabsAccountName,
   type PickItem,
@@ -180,6 +186,9 @@ function createHost(tabs: ClaudeTabs): SwitcherHost {
       const link = claudeLink(vscode.env.uriScheme, sessionId, message);
       await vscode.env.openExternal(vscode.Uri.parse(link));
     },
+    async reloadWindow() {
+      await vscode.commands.executeCommand("workbench.action.reloadWindow");
+    },
     async info(message, ...actions) {
       return vscode.window.showInformationMessage(message, ...actions);
     },
@@ -221,9 +230,11 @@ class AccountStatus implements vscode.Disposable {
     }
     const used = inUse();
     let accounts: BridgeAccount[] | undefined;
+    let open: BridgeOpenConversation[] = [];
     try {
       await this.bridge.status();
       accounts = await this.bridge.accounts();
+      open = await openInWindow(this.bridge);
     } catch (err) {
       if (!(err instanceof BridgeError)) throw err;
     }
@@ -236,7 +247,15 @@ class AccountStatus implements vscode.Disposable {
       isClaudeSwitchProfile(used.dir);
     // Only tabs this extension saw open: it cannot tell for the others.
     const others = this.tabs.notUsing(used.dir, false).map(([, started]) => started);
-    const warn = removed || others.length > 0;
+    const tabsElsewhere = this.tabs.notUsing(used.dir, true);
+    // Conversations here on another account: all of them when the folder in
+    // use is not a Claude Switch account.
+    const elsewhere = openNotUsing(
+      open,
+      current?.id ?? (used.dir === undefined ? null : undefined),
+    );
+    const sidebar = inSidebar(elsewhere, tabsElsewhere);
+    const warn = removed || others.length > 0 || sidebar;
 
     const name = current?.name ?? (used.source === "default" ? "Claude: default" : "Claude");
     this.item.text = `${warn ? "$(warning)" : "$(account)"} ${name}`;
@@ -272,7 +291,10 @@ class AccountStatus implements vscode.Disposable {
         "\n\nClaude Code still starts new tabs with this account's old profile folder. Choose another account.",
       );
     }
-    if (others.length > 0) {
+    if (sidebar && accounts) {
+      const otherName = tabsAccountName(openAccounts(elsewhere, accounts), accounts);
+      tooltip.appendText(`\n\n${sidebarMessage(tabsElsewhere.length, otherName, name)}`);
+    } else if (others.length > 0) {
       const otherName = accounts ? tabsAccountName(others, accounts) : "another account";
       tooltip.appendText(`\n\n${otherTabsMessage(others.length, otherName, name)}`);
     }

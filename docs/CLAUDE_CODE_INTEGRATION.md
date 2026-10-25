@@ -106,7 +106,16 @@ Checked in the extension's code (2.1.310): the entry replaces the window's own
 `CLAUDE_CONFIG_DIR`, the setting is machine-scoped (user settings only) and is
 read again for each new Claude tab, so it switches every window's new tabs
 while running tabs keep their process. Claude Switch therefore focuses the
-project's window with the editor's launcher before sending the link. Claude
+project's window with the editor's launcher before sending the link.
+Also checked in 2.1.310's code and logs: when the setting's
+`CLAUDE_CONFIG_DIR` changes, the extension refreshes every webview's account
+(the new email shows) but leaves running processes alone, the Claude sidebar
+included; the sidebar is a webview view kept alive while hidden, so it cannot
+be closed; the link only reveals a session the sidebar holds, with its old
+process; and after a window reload, restored tabs and the sidebar resume
+their session (`resume: <id>`) with the setting's folder. Each process is a
+child of the window's extension host and is listed in
+`<CLAUDE_CONFIG_DIR>/sessions/<pid>.json` with `sessionId` and `cwd`. Claude
 Switch writes only that one entry, keeps a backup, and shows the state in
 Settings → Editors. The Claude Switch VS Code extension uses the same setting
 (through VS Code's configuration API, which refuses to write it unless the

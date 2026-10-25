@@ -2,19 +2,21 @@
 //! Claude Code's own session registry.
 //!
 //! While it runs, every interactive Claude Code process keeps
-//! `<CLAUDE_CONFIG_DIR>/sessions/<pid>.json` with its process ID and the time
-//! it started (the Claude Code VS Code extension reads the same list). That
-//! includes processes started outside Claude Switch, such as Claude tabs in
-//! VS Code. The layout is not a documented API, so this is best effort: a
-//! missing or unreadable registry reports nothing.
+//! `<CLAUDE_CONFIG_DIR>/sessions/<pid>.json` with its process ID, the time it
+//! started, its conversation and its working folder (the Claude Code VS Code
+//! extension reads the same list). That includes processes started outside
+//! Claude Switch, such as Claude tabs in VS Code. The layout is not a
+//! documented API, so this is best effort: a missing or unreadable registry
+//! reports nothing.
 //!
-//! Only `pid` and `startedAt` are read from the `.json` files. Other files in
-//! that folder are never opened.
+//! Only `pid`, `startedAt`, `sessionId` and `cwd` are read from the `.json`
+//! files. Other files in that folder are never opened.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use uuid::Uuid;
 
 const SESSIONS: &str = "sessions";
 const MAX_ENTRIES: usize = 512;
@@ -31,11 +33,23 @@ struct Entry {
     /// Milliseconds since the epoch.
     #[serde(default)]
     started_at: Option<f64>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
 }
 
-/// Process IDs of Claude Code processes that use `config_dir` and are still
-/// running, in ascending order.
-pub fn running_in(config_dir: &Path) -> Vec<u32> {
+/// A conversation a running Claude Code process has open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenConversation {
+    pub session_id: Uuid,
+    /// The folder Claude Code runs in, which names the conversation's folder.
+    pub cwd: PathBuf,
+}
+
+/// Registry entries of `config_dir` whose process is still running, with
+/// what the process reports about itself.
+fn running(config_dir: &Path) -> Vec<(u32, Entry, libc::proc_bsdinfo)> {
     let dir = config_dir.join(SESSIONS);
     if !fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir()) {
         return Vec::new();
@@ -43,7 +57,7 @@ pub fn running_in(config_dir: &Path) -> Vec<u32> {
     let Ok(entries) = fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let mut pids: Vec<u32> = entries
+    entries
         .flatten()
         .take(MAX_ENTRIES)
         .filter_map(|entry| {
@@ -62,22 +76,49 @@ pub fn running_in(config_dir: &Path) -> Vec<u32> {
                 .started_at
                 .filter(|ms| ms.is_finite() && *ms > 0.0)
                 .map(|ms| (ms / 1000.0) as u64);
-            is_running(pid, registered).then_some(pid)
+            let info = live_process(pid, registered)?;
+            Some((pid, recorded, info))
         })
+        .collect()
+}
+
+/// Process IDs of Claude Code processes that use `config_dir` and are still
+/// running, in ascending order.
+pub fn running_in(config_dir: &Path) -> Vec<u32> {
+    let mut pids: Vec<u32> = running(config_dir)
+        .into_iter()
+        .map(|(pid, _, _)| pid)
         .collect();
     pids.sort_unstable();
     pids
 }
 
-/// True if `pid` is a live process of the current user that started no later
-/// than `registered` (seconds since the epoch, when known), so a process ID
-/// reused by an unrelated, newer process does not count.
-fn is_running(pid: u32, registered: Option<u64>) -> bool {
-    let Ok(raw) = libc::pid_t::try_from(pid) else {
-        return false;
-    };
+/// Conversations open in Claude Code processes that use `config_dir` and
+/// were started by process `parent` (for example one VS Code window's
+/// extension host), ordered by process ID.
+pub fn opened_by(config_dir: &Path, parent: u32) -> Vec<OpenConversation> {
+    let mut found: Vec<(u32, OpenConversation)> = running(config_dir)
+        .into_iter()
+        .filter(|(_, _, info)| info.pbi_ppid == parent)
+        .filter_map(|(pid, entry, _)| {
+            let session_id = Uuid::parse_str(entry.session_id.as_deref()?).ok()?;
+            let cwd = PathBuf::from(entry.cwd?);
+            cwd.is_absolute()
+                .then_some((pid, OpenConversation { session_id, cwd }))
+        })
+        .collect();
+    found.sort_unstable_by_key(|(pid, _)| *pid);
+    found.into_iter().map(|(_, c)| c).collect()
+}
+
+/// What the kernel reports about `pid`, if it is a live process of the
+/// current user that started no later than `registered` (seconds since the
+/// epoch, when known), so a process ID reused by an unrelated, newer process
+/// does not count.
+fn live_process(pid: u32, registered: Option<u64>) -> Option<libc::proc_bsdinfo> {
+    let raw = libc::pid_t::try_from(pid).ok()?;
     if raw <= 1 {
-        return false;
+        return None;
     }
     // SAFETY: proc_bsdinfo is plain data, so all-zero is a valid value.
     let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
@@ -93,13 +134,15 @@ fn is_running(pid: u32, registered: Option<u64>) -> bool {
         )
     };
     if filled != size || info.pbi_status == ZOMBIE {
-        return false;
+        return None;
     }
     // SAFETY: getuid has no preconditions.
     if info.pbi_uid != unsafe { libc::getuid() } {
-        return false;
+        return None;
     }
-    registered.is_none_or(|t| info.pbi_start_tvsec <= t + START_SLACK_SECS)
+    registered
+        .is_none_or(|t| info.pbi_start_tvsec <= t + START_SLACK_SECS)
+        .then_some(info)
 }
 
 #[cfg(test)]
@@ -134,6 +177,46 @@ mod tests {
         );
         // Not a registry entry.
         register(tmp.path(), &format!("{me}.abc.key"), "secret");
+        assert_eq!(running_in(tmp.path()), vec![me]);
+    }
+
+    #[test]
+    fn finds_conversations_by_parent_process() {
+        let tmp = tempfile::tempdir().unwrap();
+        let me = std::process::id();
+        let parent = std::os::unix::process::parent_id();
+        let session = "5b1f8a5e-3a0c-4c55-9a43-0f3f2b6a9d10";
+        register(
+            tmp.path(),
+            &format!("{me}.json"),
+            &format!(
+                r#"{{"pid": {me}, "startedAt": {}, "sessionId": "{session}", "cwd": "/Users/someone/project", "status": "idle"}}"#,
+                now_ms()
+            ),
+        );
+        assert_eq!(
+            opened_by(tmp.path(), parent),
+            vec![OpenConversation {
+                session_id: Uuid::parse_str(session).unwrap(),
+                cwd: PathBuf::from("/Users/someone/project"),
+            }]
+        );
+        assert!(opened_by(tmp.path(), me).is_empty());
+
+        // Without a conversation, or with a relative folder, there is nothing
+        // to hand over.
+        register(
+            tmp.path(),
+            &format!("{me}.json"),
+            &format!(r#"{{"pid": {me}, "sessionId": "{session}", "cwd": "project"}}"#),
+        );
+        assert!(opened_by(tmp.path(), parent).is_empty());
+        register(
+            tmp.path(),
+            &format!("{me}.json"),
+            &format!(r#"{{"pid": {me}, "cwd": "/Users/someone/project"}}"#),
+        );
+        assert!(opened_by(tmp.path(), parent).is_empty());
         assert_eq!(running_in(tmp.path()), vec![me]);
     }
 

@@ -145,7 +145,9 @@ It asks the app over `editor_bridge.rs`: a Unix socket at
 `~/.claude-switch/claude-switch.sock` (0600 in the 0700 managed folder, peer
 uid checked with `getpeereid`), one JSON request per connection, ≤ 64 KB, 10 s
 timeouts. Methods: `status` (app and protocol version), `accounts`,
-`conversations {directory}`, `continue {directory, sessionId,
+`conversations {directory}`, `open {parentPid}` (conversations open in the
+Claude Code processes that process started, from Claude Code's session
+registry, with their account and folder), `continue {directory, sessionId,
 fromAccountId?, toAccountId}` (the same copy as the app's handoff, into a
 signed-in account only) and `show {accountId?}` (brings the window forward).
 The directory is canonicalized and must be an existing folder outside the
@@ -158,6 +160,12 @@ settings, machine scope), closes the active Claude tab when continuing the
 latest conversation in it (the Claude Code extension would otherwise just
 focus the tab with the old account), and opens
 `<uriScheme>://anthropic.claude-code/open?session=…&prompt=…` in the window.
+The Claude sidebar cannot be closed, and the link only shows a conversation
+the sidebar holds there, with its old process. The extension finds it with
+`open {parentPid: <its extension host>}` (Claude Code starts its processes
+from the same extension host), copies what is open to the new account and
+reloads the window, after which Claude Code resumes each tab's and the
+sidebar's conversation with the new account.
 If the socket is missing it runs `open -g -b dev.claudeswitch.desktop --args
 --background` and waits for it.
 
