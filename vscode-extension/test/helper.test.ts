@@ -136,12 +136,28 @@ describe("Helper", () => {
     const pending = helper.listAccounts();
     procs[0]?.emit("exit", 1);
     await expect(pending).rejects.toMatchObject({ kind: "notRunning" });
-    expect(exits).toEqual([{ code: 1 }]);
+    expect(exits).toEqual([{ code: 1, started: false }]);
     void helper.listAccounts();
     expect(procs).toHaveLength(2);
     // Lines from the old process no longer count.
     procs[0]?.reply(2, { result: [] });
     await tick();
+  });
+
+  it("tells a helper that stopped apart from one that never started", async () => {
+    const { helper, procs } = setup();
+    const exits: unknown[] = [];
+    helper.on("exited", (e) => exits.push(e));
+    const answered = helper.listAccounts();
+    procs[0]?.reply(1, { result: [] });
+    await answered;
+    procs[0]?.emit("exit", 0);
+    void helper.listAccounts().catch(() => undefined);
+    procs[1]?.emit("error", new Error("spawn ENOENT"));
+    expect(exits).toEqual([
+      { code: 0, started: true },
+      { code: null, started: false },
+    ]);
   });
 
   it("ends the helper's input on dispose, which stops its sessions", () => {

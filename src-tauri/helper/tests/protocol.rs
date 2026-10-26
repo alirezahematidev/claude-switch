@@ -251,6 +251,19 @@ fn runs_accounts_sign_in_and_terminals() {
         json!({ "id": session_id, "data": "hello\r" }),
     );
     helper.output_until(&session_id, "ECHO:hello");
+
+    // Keystrokes sent one by one, without waiting for each answer, arrive in
+    // the order they were typed.
+    let typed: String = (0..300)
+        .map(|i| char::from(b"abcdefghijklmnopqrstuvwxyz0123456789"[i % 36]))
+        .collect();
+    for c in typed.chars().chain(['\r']) {
+        helper.send(
+            &json!({ "id": 0, "method": "writeSession", "params": { "id": session_id, "data": c.to_string() } })
+                .to_string(),
+        );
+    }
+    helper.output_until(&session_id, &format!("ECHO:{typed}"));
     helper.ok(
         "resizeSession",
         json!({ "id": session_id, "cols": 100, "rows": 30 }),

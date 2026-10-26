@@ -56,8 +56,11 @@ export interface HelperEvents {
   output: { id: string; data: string };
   /** Something asked to show an account (or all of them). */
   show: { accountId: string | null };
-  /** The helper exited; its sessions are gone. Sent by this client. */
-  exited: { code: number | null };
+  /**
+   * The helper exited; its sessions are gone. Sent by this client.
+   * `started` is false when it never answered: it could not start.
+   */
+  exited: { code: number | null; started: boolean };
 }
 
 type Listener<K extends keyof HelperEvents> = (data: HelperEvents[K]) => void;
@@ -88,6 +91,8 @@ function isErrorPayload(value: unknown): value is { kind: string; message: strin
 export class Helper {
   private proc: HelperProcess | undefined;
   private buffer = "";
+  /** The current process has answered at least once. */
+  private answered = false;
   private nextId = 0;
   private readonly pending = new Map<number, Pending>();
   private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
@@ -122,6 +127,7 @@ export class Helper {
     const proc = this.start();
     this.proc = proc;
     this.buffer = "";
+    this.answered = false;
     proc.stdout?.on("data", (chunk) => {
       this.receive(proc, chunk.toString());
     });
@@ -134,7 +140,7 @@ export class Helper {
       this.ready = undefined;
       for (const p of this.pending.values()) p.reject(new HelperError("notRunning", message));
       this.pending.clear();
-      this.emit("exited", { code });
+      this.emit("exited", { code, started: this.answered });
     };
     proc.on("exit", (code) => {
       gone(code, "Claude Switch's helper stopped.");
@@ -159,6 +165,7 @@ export class Helper {
         continue;
       }
       if (!isRecord(message)) continue;
+      this.answered = true;
       if (typeof message.event === "string") {
         this.emit(message.event, message.data);
         continue;

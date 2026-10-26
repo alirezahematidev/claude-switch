@@ -37,6 +37,9 @@ const PROTOCOL: u32 = 1;
 const LOG_FILE: &str = "claude-switch-helper.log";
 /// Methods answered by the editor bridge, shared with the app's socket.
 const BRIDGE_METHODS: &[&str] = &["status", "accounts", "conversations", "open", "continue"];
+/// Keystrokes and size changes, which must reach a terminal in the order
+/// they were sent. They are quick, so one thread answers them in turn.
+const ORDERED_METHODS: &[&str] = &["writeSession", "resizeSession"];
 
 /// Writes whole lines to stdout. The extension reads them in order.
 struct Out(Mutex<std::io::Stdout>);
@@ -315,6 +318,24 @@ fn reply(id: Value, result: AppResult<Value>) -> Value {
     }
 }
 
+/// Answers one request line; exits once the extension stops reading.
+fn answer(helper: &Helper, line: &str) {
+    let response = helper.respond(line);
+    if !helper.out.send(&response) {
+        std::process::exit(0);
+    }
+}
+
+fn is_ordered(line: &str) -> bool {
+    serde_json::from_str::<Value>(line)
+        .ok()
+        .and_then(|request| {
+            let method = request.get("method")?.as_str()?;
+            Some(ORDERED_METHODS.contains(&method))
+        })
+        .unwrap_or(false)
+}
+
 fn start_core(events: Arc<Events>) -> AppResult<Arc<AppCore>> {
     let paths = AppPaths::resolve()?;
     paths.ensure()?;
@@ -361,20 +382,29 @@ fn main() {
         version: app_version(),
     });
 
+    let (ordered, queue) = std::sync::mpsc::channel::<String>();
+    {
+        let helper = helper.clone();
+        std::thread::spawn(move || {
+            for line in queue {
+                answer(&helper, &line);
+            }
+        });
+    }
+
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
             continue;
         }
+        if is_ordered(&line) {
+            let _ = ordered.send(line);
+            continue;
+        }
         let helper = helper.clone();
         // Sign-in checks and copies take a while; answer the rest meanwhile.
-        std::thread::spawn(move || {
-            let response = helper.respond(&line);
-            if !helper.out.send(&response) {
-                std::process::exit(0);
-            }
-        });
+        std::thread::spawn(move || answer(&helper, &line));
     }
     // The window is gone: stop what it started.
     if let Ok(core) = &helper.core {

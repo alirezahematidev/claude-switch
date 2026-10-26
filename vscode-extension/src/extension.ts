@@ -434,9 +434,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerTreeDataProvider("claudeSwitch.accounts", accountsView),
     helper.on("changed", onChange),
     helper.on("show", () => void showAccounts()),
-    helper.on("exited", ({ code }) => {
+    helper.on("exited", ({ code, started }) => {
       output.warn(`helper exited (code ${code ?? "none"})`);
-      refresh();
+      // A helper that could not start would only fail again, over and over;
+      // the requests that started it already show why.
+      if (started) refresh();
     }),
     vscode.commands.registerCommand(
       "claudeSwitch.switchAccount",

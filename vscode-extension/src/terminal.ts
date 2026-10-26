@@ -42,6 +42,9 @@ class SessionPty implements vscode.Pseudoterminal {
   private decoder = new OutputDecoder();
   private size = { cols: 120, rows: 30 };
   private ended = false;
+  /** A session is being started (or restarted). */
+  private starting = false;
+  private closed = false;
   private limitReported = false;
   private readonly subscriptions: { dispose(): void }[] = [];
 
@@ -72,17 +75,32 @@ class SessionPty implements vscode.Pseudoterminal {
   }
 
   private async start(launch: () => Promise<SessionInfo>): Promise<void> {
+    this.starting = true;
+    const launched = { ...this.size };
     try {
       const session = await launch();
+      if (this.closed) {
+        // Closed while it started: nothing would show it or stop it.
+        this.helper.closeSession(session.id).catch(() => undefined);
+        return;
+      }
       this.session = session;
       this.decoder = new OutputDecoder();
       this.ended = false;
       this.limitReported = false;
       await this.helper.attachSession(session.id);
+      // Resized while it started.
+      if (this.size.cols !== launched.cols || this.size.rows !== launched.rows) {
+        this.helper
+          .resizeSession(session.id, this.size.cols, this.size.rows)
+          .catch(() => undefined);
+      }
       this.update(session);
     } catch (err) {
       this.ended = true;
       this.writer.fire(message(err instanceof Error ? err.message : String(err), RED));
+    } finally {
+      this.starting = false;
     }
   }
 
@@ -104,7 +122,8 @@ class SessionPty implements vscode.Pseudoterminal {
     const session = this.session;
     if (!session) return;
     if (this.ended) {
-      if (data === "\r") {
+      // Once: another Return while it restarts would start a second session.
+      if (data === "\r" && !this.starting) {
         void this.start(() =>
           this.helper.restartSession(session.id, this.size.cols, this.size.rows),
         );
@@ -125,6 +144,7 @@ class SessionPty implements vscode.Pseudoterminal {
   }
 
   close(): void {
+    this.closed = true;
     openTerminals.delete(this);
     for (const s of this.subscriptions) s.dispose();
     const session = this.session;

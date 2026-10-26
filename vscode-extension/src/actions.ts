@@ -249,7 +249,7 @@ export class Actions {
           cols,
           rows,
         }),
-      { onUsageLimit: (session) => void this.onUsageLimit(session) },
+      { onUsageLimit: (session) => void this.guard(() => this.onUsageLimit(session)) },
     );
   }
 
@@ -257,6 +257,7 @@ export class Actions {
   async continueConversation(given?: Conversation, inTerminal = false): Promise<void> {
     const conversation = given ?? (await this.switcher.pickConversation());
     if (!conversation) return;
+    if (this.accounts.accounts.length === 0) await this.accounts.refresh();
     const others = this.accounts.accounts.filter((a) => a.id !== conversation.accountId);
     const picked = await this.pickAccount("Continue with", others);
     const target = picked && (await this.signedIn(picked));
@@ -284,7 +285,7 @@ export class Actions {
         if (!result.session) throw new Error("The session did not start.");
         return result.session;
       },
-      { onUsageLimit: (session) => void this.onUsageLimit(session) },
+      { onUsageLimit: (session) => void this.guard(() => this.onUsageLimit(session)) },
     );
   }
 
