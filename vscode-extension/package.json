@@ -1,7 +1,7 @@
 {
   "name": "claude-switch-vscode",
   "displayName": "Claude Switch for VS Code",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Switch Claude Code between your accounts in one click. Each account stays signed in, and your open conversation moves with you.",
   "categories": [
