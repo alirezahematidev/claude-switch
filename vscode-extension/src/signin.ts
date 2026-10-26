@@ -33,11 +33,17 @@ async function chooseMethod(account: Account): Promise<LoginMethod | undefined> 
   return picked?.method;
 }
 
+/** What signing in needs from the helper. */
+export type SignInHelper = Pick<
+  Helper,
+  "on" | "startLogin" | "loginProgress" | "submitLoginCode" | "closeSession"
+>;
+
 /**
  * Signs `account` in. Resolves with the account once signed in, or
  * `undefined` when the sign-in failed or was cancelled.
  */
-export async function signIn(helper: Helper, account: Account): Promise<Account | undefined> {
+export async function signIn(helper: SignInHelper, account: Account): Promise<Account | undefined> {
   const method = await chooseMethod(account);
   if (!method) return undefined;
   let session: SessionInfo;
@@ -50,29 +56,43 @@ export async function signIn(helper: Helper, account: Account): Promise<Account 
 
   let progress: LoginProgress | undefined;
   let signedIn: Account | undefined;
+  let cancelled = false;
+  // Assigned by the executor of `done` below, which runs at once.
+  let finish!: () => void;
   const changed = new vscode.EventEmitter<void>();
+  const update = (p: LoginProgress) => {
+    progress = p;
+    changed.fire();
+    // "succeeded" comes as soon as Claude Code prints it; the sign-in is
+    // over with `loginCompleted`, once the stored login has been checked.
+    if (p.phase === "failed") finish();
+  };
+  const subscriptions = [
+    helper.on("loginProgress", (p) => {
+      if (p.sessionId === session.id) update(p);
+    }),
+    helper.on("loginCompleted", (a) => {
+      if (a.id !== account.id) return;
+      signedIn = a;
+      finish();
+    }),
+    helper.on("exited", () => {
+      finish();
+    }),
+  ];
   const done = new Promise<void>((resolve) => {
-    const subscriptions = [
-      helper.on("loginProgress", (p) => {
-        if (p.sessionId !== session.id) return;
-        progress = p;
-        changed.fire();
-        if (p.phase === "succeeded" || p.phase === "failed") finish();
-      }),
-      helper.on("loginCompleted", (a) => {
-        if (a.id !== account.id) return;
-        signedIn = a;
-        finish();
-      }),
-      helper.on("exited", () => {
-        finish();
-      }),
-    ];
-    function finish() {
+    finish = () => {
       for (const s of subscriptions) s.dispose();
       resolve();
-    }
+    };
   });
+  // Progress sent before the subscriptions existed.
+  helper
+    .loginProgress(session.id)
+    .then((p) => {
+      if (!progress) update(p);
+    })
+    .catch(() => undefined);
   const nextChange = () =>
     new Promise<"changed">((resolve) => {
       const s = changed.event(() => {
@@ -96,7 +116,8 @@ export async function signIn(helper: Helper, account: Account): Promise<Account 
       // Set when Claude Code refused a code and is waiting for another.
       const problem = progress?.phase === "waiting" ? progress.message : null;
       const key = [...actions, problem].join("|");
-      if (url && (!shown || key !== shownFor)) {
+      // Nothing to offer while a code is checked or once it is over.
+      if (url && progress?.phase === "waiting" && (!shown || key !== shownFor)) {
         shown = problem
           ? vscode.window.showWarningMessage(problem, ...actions)
           : vscode.window.showInformationMessage(
@@ -128,7 +149,9 @@ export async function signIn(helper: Helper, account: Account): Promise<Account 
         });
         if (code) {
           try {
-            progress = await helper.submitLoginCode(session.id, code.trim());
+            // The result follows as progress events; the reply can be older
+            // than one that already arrived.
+            await helper.submitLoginCode(session.id, code.trim());
           } catch (err) {
             await vscode.window.showErrorMessage(err instanceof Error ? err.message : String(err));
           }
@@ -145,7 +168,8 @@ export async function signIn(helper: Helper, account: Account): Promise<Account 
     },
     async (_report, token) => {
       const cancel = token.onCancellationRequested(() => {
-        helper.stopSession(session.id).catch(() => undefined);
+        cancelled = true;
+        finish();
       });
       void offer();
       await done;
@@ -153,12 +177,14 @@ export async function signIn(helper: Helper, account: Account): Promise<Account 
     },
   );
   changed.dispose();
+  // Also stops a sign-in that is still running.
   helper.closeSession(session.id).catch(() => undefined);
 
   if (signedIn) {
     vscode.window.setStatusBarMessage(`$(check) ${signedIn.name} signed in`, 4000);
     return signedIn;
   }
+  if (cancelled) return undefined;
   const reason = progress?.phase === "failed" && progress.message ? `: ${progress.message}` : ".";
   const action = await vscode.window.showErrorMessage(
     `${account.name} was not signed in${reason}`,
