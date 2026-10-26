@@ -11,6 +11,10 @@
 //! Login successful.            (or)  Login failed: <reason>
 //! ```
 //!
+//! A pasted line without its `#state` part is answered with "Invalid code.
+//! Please make sure the full code was copied." and Claude Code keeps waiting
+//! for another one.
+//!
 //! The format is not a documented API, so everything here is best effort:
 //! anything unrecognized leaves the raw terminal available in the UI. The
 //! URL is kept in memory only and never logged.
@@ -19,6 +23,8 @@ use serde::Serialize;
 use ts_rs::TS;
 
 const MAX_BUFFER: usize = 64 * 1024;
+
+const INCOMPLETE_CODE: &str = "That code is incomplete. Copy the whole code from the browser page, including the part after the #, and paste it again.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -97,7 +103,8 @@ impl LoginParser {
         &self.progress
     }
 
-    /// Marks that a code was sent to Claude Code.
+    /// Marks that a code is about to be sent to Claude Code. Called before
+    /// writing it, so the reply cannot arrive first and be discarded.
     pub fn code_submitted(&mut self) -> LoginProgress {
         if !self.progress.is_finished() {
             self.progress.phase = LoginPhase::Verifying;
@@ -105,6 +112,14 @@ impl LoginParser {
         }
         // Only output after the code counts toward its result.
         self.raw.clear();
+        self.progress.clone()
+    }
+
+    /// Undoes [`Self::code_submitted`] when the code could not be written.
+    pub fn code_not_sent(&mut self) -> LoginProgress {
+        if self.progress.phase == LoginPhase::Verifying {
+            self.progress.phase = LoginPhase::Waiting;
+        }
         self.progress.clone()
     }
 
@@ -139,6 +154,11 @@ impl LoginParser {
             self.progress.phase = LoginPhase::Succeeded;
             self.progress.awaiting_code = false;
             self.progress.message = None;
+        } else if plain.contains("Invalid code") && !self.progress.is_finished() {
+            // Claude Code is still waiting; let the user paste the code again.
+            self.progress.phase = LoginPhase::Waiting;
+            self.progress.awaiting_code = true;
+            self.progress.message = Some(INCOMPLETE_CODE.into());
         }
         (self.progress != before).then(|| self.progress.clone())
     }
@@ -325,6 +345,37 @@ mod tests {
             .unwrap();
         assert_eq!(state.phase, LoginPhase::Failed);
         assert!(state.message.unwrap().contains("didn't accept that code"));
+    }
+
+    #[test]
+    fn asks_again_for_an_incomplete_code() {
+        let mut p = LoginParser::new("s", "a");
+        p.feed(sample().as_bytes());
+        p.code_submitted();
+        let state = p
+            .feed(b"Invalid code. Please make sure the full code was copied.\r\n")
+            .unwrap();
+        assert_eq!(state.phase, LoginPhase::Waiting);
+        assert!(state.awaiting_code);
+        assert!(state.message.unwrap().contains("incomplete"));
+
+        // The next code starts from a clean slate.
+        let next = p.code_submitted();
+        assert_eq!(next.phase, LoginPhase::Verifying);
+        assert_eq!(next.message, None);
+        assert_eq!(p.feed(b"\x1b[?25l"), None, "old output is not re-read");
+        let state = p.feed(b"Login successful.\r\n").unwrap();
+        assert_eq!(state.phase, LoginPhase::Succeeded);
+    }
+
+    #[test]
+    fn code_not_sent_returns_to_waiting() {
+        let mut p = LoginParser::new("s", "a");
+        p.feed(sample().as_bytes());
+        p.code_submitted();
+        let state = p.code_not_sent();
+        assert_eq!(state.phase, LoginPhase::Waiting);
+        assert!(state.awaiting_code);
     }
 
     #[test]

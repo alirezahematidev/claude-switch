@@ -922,6 +922,40 @@ fn rejected_code_is_explained_and_recorded() {
 }
 
 #[test]
+fn incomplete_code_can_be_pasted_again() {
+    use claude_switch_lib::login::LoginPhase;
+    let app = TestApp::new();
+    let a = app.account("A");
+    let login = start_code_login(&app, &a);
+    wait_until("code prompt", || {
+        app.core
+            .login_progress(&login.id)
+            .is_ok_and(|p| p.awaiting_code)
+    });
+    let verifying = app.core.submit_login_code(&login.id, "good-code").unwrap();
+    assert_eq!(verifying.phase, LoginPhase::Verifying);
+    wait_until("code asked for again", || {
+        app.core
+            .login_progress(&login.id)
+            .is_ok_and(|p| p.phase == LoginPhase::Waiting && p.message.is_some())
+    });
+    let progress = app.core.login_progress(&login.id).unwrap();
+    assert!(progress.awaiting_code);
+    assert!(progress.message.unwrap().contains("incomplete"));
+
+    app.core
+        .submit_login_code(&login.id, "good-code#state")
+        .unwrap();
+    wait_until("sign-in success", || {
+        app.core.login_progress(&login.id).unwrap().phase == LoginPhase::Succeeded
+    });
+    wait_until("account authenticated", || {
+        app.core.list_accounts().unwrap()[0].auth_status == AuthStatus::Authenticated
+    });
+    app.core.close_session(&login.id).unwrap();
+}
+
+#[test]
 fn codes_can_only_be_sent_to_sign_in_sessions() {
     let app = TestApp::new();
     let a = app.account("A");

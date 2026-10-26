@@ -170,6 +170,14 @@ fn sign_in_screen_understands_the_real_login_output() {
     assert_eq!(progress.phase, LoginPhase::Waiting);
     assert!(progress.url.unwrap().starts_with("https://"));
 
+    // Without its #state part, Claude Code refuses the code and waits.
+    core.submit_login_code(&login.id, "not-a-real-code")
+        .unwrap();
+    wait_until("the incomplete code to be reported", || {
+        core.login_progress(&login.id)
+            .is_ok_and(|p| p.phase == LoginPhase::Waiting && p.message.is_some())
+    });
+
     core.submit_login_code(&login.id, "not-a-real-code#bogus")
         .unwrap();
     wait_until("the rejected code to be reported", || {

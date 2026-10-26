@@ -78,6 +78,27 @@ describe("SignInProgress", () => {
     expect(screen.getByRole("button", { name: /open sign-in page/i })).toBeDisabled();
   });
 
+  it("asks again when Claude Code refuses an incomplete code", async () => {
+    mockCommand("submit_login_code", progress({ phase: "verifying" }));
+    setup();
+    const field = await screen.findByLabelText("Authorization code");
+    await userEvent.type(field, "code-123{Enter}");
+    act(() => {
+      emitEvent("login-progress", progress({ phase: "verifying" }));
+    });
+    await waitFor(() => {
+      expect(field).toBeDisabled();
+    });
+    act(() => {
+      emitEvent("login-progress", progress({ message: "That code is incomplete." }));
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("That code is incomplete.");
+    expect(field).toBeEnabled();
+    expect(field).toHaveFocus();
+    await userEvent.type(field, "code-123#state");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("follows progress events to success", async () => {
     const { onSuccess } = setup();
     await screen.findByText("Waiting for you to sign in");

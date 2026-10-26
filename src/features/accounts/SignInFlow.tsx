@@ -1,5 +1,5 @@
 import { CheckCircle2Icon, ClipboardIcon, ExternalLinkIcon, KeyRoundIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useId, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { Account } from "@/bindings/Account";
@@ -156,11 +156,20 @@ export function SignInProgress({
   const [codeError, setCodeError] = useState<string | null>(null);
   const [showOutput, setShowOutput] = useState(false);
   const codeId = useId();
+  const codeRef = useRef<HTMLInputElement>(null);
 
   const progress = raw === "gone" ? null : raw;
   const phase = raw === "gone" ? "failed" : (progress?.phase ?? "starting");
   const finished = phase === "succeeded" || phase === "failed";
   const fresh = accounts.find((a) => a.id === account.id) ?? account;
+  // Claude Code refused the last code but is waiting for another one.
+  const codeProblem =
+    codeError ?? (phase === "waiting" && code === "" ? (progress?.message ?? null) : null);
+  const codeRefused = phase === "waiting" && Boolean(progress?.message);
+  useEffect(() => {
+    // The field was disabled (and lost focus) while the code was checked.
+    if (codeRefused) codeRef.current?.focus();
+  }, [codeRefused]);
 
   // If Claude Code prints something we don't recognize, show its output.
   useEffect(() => {
@@ -294,10 +303,11 @@ export function SignInProgress({
                   </label>
                   <div className="flex gap-2">
                     <Input
+                      ref={codeRef}
                       id={codeId}
                       autoComplete="one-time-code"
                       placeholder="Paste authorization code"
-                      aria-invalid={Boolean(codeError)}
+                      aria-invalid={Boolean(codeProblem)}
                       disabled={phase === "verifying" || !progress?.awaitingCode}
                       value={code}
                       onChange={(e) => {
@@ -315,9 +325,9 @@ export function SignInProgress({
                       Continue
                     </Button>
                   </div>
-                  {codeError && (
+                  {codeProblem && (
                     <p role="alert" className="text-xs text-destructive">
-                      {codeError}
+                      {codeProblem}
                     </p>
                   )}
                 </Form>

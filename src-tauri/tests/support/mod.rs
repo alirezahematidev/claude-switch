@@ -48,7 +48,14 @@ case "$1" in
         printf "If the browser didn't open, visit: \033]8;;%s\007%s\033]8;;\007\r\n" "$url" "$url"
         if [ -f "$CLAUDE_CONFIG_DIR/mock-login-needs-code" ]; then
           printf 'Paste code here if prompted > '
-          IFS= read -r code
+          # Like Claude Code, a code without its #state part is refused and
+          # another one is read.
+          while IFS= read -r code; do
+            case "$code" in
+              ?*'#'?*) break ;;
+            esac
+            echo "Invalid code. Please make sure the full code was copied." >&2
+          done
           if [ "$code" = "good-code#state" ]; then
             printf 'claude.ai' > "$CLAUDE_CONFIG_DIR/mock-auth"
             echo "Login successful."

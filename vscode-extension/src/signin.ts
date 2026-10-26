@@ -93,12 +93,16 @@ export async function signIn(helper: Helper, account: Account): Promise<Account 
         ...(progress?.awaitingCode ? [ENTER_CODE] : []),
         ...(url ? [COPY_LINK] : []),
       ];
-      const key = actions.join("|");
+      // Set when Claude Code refused a code and is waiting for another.
+      const problem = progress?.phase === "waiting" ? progress.message : null;
+      const key = [...actions, problem].join("|");
       if (url && (!shown || key !== shownFor)) {
-        shown = vscode.window.showInformationMessage(
-          `Finish signing in to ${account.name} in your browser.`,
-          ...actions,
-        );
+        shown = problem
+          ? vscode.window.showWarningMessage(problem, ...actions)
+          : vscode.window.showInformationMessage(
+              `Finish signing in to ${account.name} in your browser.`,
+              ...actions,
+            );
         shownFor = key;
       }
       const action = await Promise.race([

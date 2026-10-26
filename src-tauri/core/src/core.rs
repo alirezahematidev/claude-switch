@@ -915,14 +915,23 @@ impl AppCore {
                 "This sign-in has already finished".into(),
             ));
         }
-        if lock(&parser).progress().is_finished() {
-            return Err(AppError::Conflict(
-                "This sign-in has already finished".into(),
-            ));
-        }
-        self.pty.write(&id, format!("{code}\r").as_bytes())?;
-        let progress = lock(&parser).code_submitted();
+        // Reset the parser before writing: Claude Code can answer (for
+        // example "Invalid code") before a write followed by a reset returns.
+        let progress = {
+            let mut p = lock(&parser);
+            if p.progress().is_finished() {
+                return Err(AppError::Conflict(
+                    "This sign-in has already finished".into(),
+                ));
+            }
+            p.code_submitted()
+        };
         self.emit(CoreEvent::LoginProgress(progress.clone()));
+        if let Err(e) = self.pty.write(&id, format!("{code}\r").as_bytes()) {
+            let progress = lock(&parser).code_not_sent();
+            self.emit(CoreEvent::LoginProgress(progress));
+            return Err(e);
+        }
         Ok(progress)
     }
 
